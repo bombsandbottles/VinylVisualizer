@@ -1,7 +1,7 @@
 /*
  * ===========================================================================================
- *   Author:  Harrison Zafrin (hzz200@nyu,edu)
- *   Organization:  Bombs and Bottles LLC.
+ *   Author:  Harrison Zafrin (hzz200@nyu,edu)(harrison@bombsandbottles.com)
+ *   Organization:  Bombs and Bottles LLC. - www.bombsandbottles.com
  *
  *   Title: Vinyl Visualizer
  *   CProgramming Final Project 2014
@@ -14,7 +14,6 @@
  *   Sample Rate Modulation From - http://www.mega-nerd.com/SRC/api_full.html
  * ===========================================================================================
  */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -43,7 +42,6 @@
 #define SLEEP( milliseconds ) usleep( (unsigned long) (milliseconds * 1000.0) )
 #endif
 
-
 //-----------------------------------------------------------------------------
 // global variables and #defines
 //-----------------------------------------------------------------------------
@@ -54,22 +52,28 @@
 #define SAMPLE                  float
 #define MONO                    1
 #define STEREO                  2
+#define SRC_RATIO_INCREMENT     1
 #define cmp_abs(x)              ( sqrt( (x).re * (x).re + (x).im * (x).im ) )
 #define PI                      3.14159265358979323846264338327950288
 #define ROTATION_INCR           .75f
-#define INIT_WIDTH              800
-#define INIT_HEIGHT             600
+#define INIT_WIDTH              1280
+#define INIT_HEIGHT             720
 
 
-//Global Sound Data Struct
+/* Global Sound Data Struct */
  typedef struct {
     
-    //INFILE
-    SNDFILE *infile;
+    /* Audio File Members */
+    SNDFILE* infile;
     SF_INFO sf_info1;
     float buffer[FRAMES_PER_BUFFER * STEREO];
 
-    //SAMPLE RATE
+    /* Sample Rate Converter Members */
+    SRC_DATA  src_data;
+    SRC_STATE* src_state;
+    int src_error;
+    int src_converter_type;
+    double src_ratio;
 
     //LOWPASS
 
@@ -83,7 +87,7 @@ PaStream *g_stream;
 
 
 
-// width and height of the window
+// WxH Of OpenGL Window
 GLsizei g_width = INIT_WIDTH;
 GLsizei g_height = INIT_HEIGHT;
 GLsizei g_last_width = INIT_WIDTH;
@@ -94,12 +98,11 @@ typedef char BYTE;   // 8-bit unsigned entity.
 
 // global audio vars
 GLint g_buffer_size = BUFFER_SIZE;
-unsigned int g_channels = MONO;
 
 // Threads Management
 GLboolean g_ready = false;
 
-// fill mode
+// Fill Mode
 GLenum g_fillmode = GL_FILL;
 
 // light 0 position
@@ -125,7 +128,7 @@ bool g_key_rotate_y = false;
 bool g_key_rotate_x =  false;
 
 //-----------------------------------------------------------------------------
-// function prototypes
+// Function Prototypes
 //-----------------------------------------------------------------------------
 void idleFunc( );
 void displayFunc( );
@@ -135,6 +138,9 @@ void specialKey( int key, int x, int y );
 void specialUpKey( int key, int x, int y);
 void initialize_graphics( );
 void initialize_glut(int argc, char *argv[]);
+
+/* Audio Processing Functions */
+void initialize_src_type();
 void initialize_audio();
 void stop_portAudio();
 
@@ -144,34 +150,69 @@ void rotateView();
 
 
 //-----------------------------------------------------------------------------
-// Name: main
+// Name: Main
 // Desc: ...
 //-----------------------------------------------------------------------------
 int main( int argc, char *argv[] )
 {
-    // Initialize Glut
+    /* Check Arguments */
+    if ( argc != 2 ) {
+        printf("Usage: %s: Input Audio\n", argv[0]);
+        return EXIT_FAILURE;
+    }
+
+    /* Initialize SRC Algorithm */
+    initialize_src_type();
+
+    /* Initialize Glut */
     initialize_glut(argc, argv);
 
-    // Initialize PortAudio
+    /* Initialize PortAudio */
     initialize_audio();
 
-    // Print help
+    /* Print Help */
     help();
 
-    // Wait until 'q' is pressed to stop the process
+    /* Main Interactive Loop, Quits With 'q' */
     glutMainLoop();
-
-    // This will never get executed
 
     return EXIT_SUCCESS;
 }
 
 //-----------------------------------------------------------------------------
+// name: initialize_src_type
+// desc: Initializes SRC Algorithm, Stores Value in data.src_converter_type 
+//-----------------------------------------------------------------------------
+void initialize_src_type()
+{
+    /* Print User Menu */
+    printf("Choose The Quality of Sample Rate Conversion\n
+            Best Quality = 0\n
+            Medium Quality = 1\n
+            Fastest Quality = 2\n
+            Zero Order Hold = 3\n
+            Linear Processing = 4\n");
+    printf("Enter a Number Between 0 and 4 : \n");
+
+    /* Get User Input */
+    char c = (int)getchar();
+        while (c < 0 || c > 4)
+        {
+            printf("Error: Please Enter a Number Between 0 and 4 : \n");
+            c = (int)getchar();
+        }
+    //Store C into Data
+    data.src_converter_type = c;
+
+}
+
+//-----------------------------------------------------------------------------
 // name: help()
-// desc: Prints CLI Usage
+// desc: Prints Command Line Usage
 //-----------------------------------------------------------------------------
 void help()
 {
+    /* Print Command Line Instructions */
     printf( "----------------------------------------------------\n" );
     printf( "Vinyl Visualizer\n" );
     printf( "----------------------------------------------------\n" );
@@ -179,7 +220,7 @@ void help()
     printf( "'f' - toggle fullscreen\n" );
     printf( "'j/k' - increase or decrease frequency by 5hz\n" );
     printf( "'m' to mute output audio\n" );
-    printf( "'CURSOR ARROWS' - rotate signal view\n" );
+    printf( "'CURSOR ARROWS' - Change Speed Of Playback\n" );
     printf( "'q' - quit\n" );
     printf( "----------------------------------------------------\n" );
     printf( "\n" );
@@ -187,41 +228,21 @@ void help()
 
 //-----------------------------------------------------------------------------
 // Name: paCallback( )
-// Desc: callback from portAudio
+// Desc: Callback from PortAudio
 //-----------------------------------------------------------------------------
 static int paCallback( const void *inputBuffer,
         void *outputBuffer, unsigned long framesPerBuffer,
         const PaStreamCallbackTimeInfo* timeInfo,
         PaStreamCallbackFlags statusFlags, void *userData ) 
 {
-    // TODO: Synthesize audio
-    (void) inputBuffer; /* Prevent unused variable warning. */
+    //Cast Appropriate Types
+    (void) inputBuffer;
     SAMPLE* out = (SAMPLE*)outputBuffer;
     paData *data = (paData*)userData;
 
-    //Wave Samples
-    SAMPLE sine, saw, tri, impulse;
-
     for (int i = 0; i < framesPerBuffer; i++)
     {
-    	//Sine Wave
-    	sine = synthesizeSineWave();
-    	data->g_sinBuffer[i] = sine;
 
-    	//Saw Wave
-    	saw = synthesizeSawWave();
-    	data->g_sawBuffer[i] = saw;
-
-    	//Triangle Wave
-    	tri = synthesizeTriWave();
-    	data->g_triBuffer[i] = tri;
-
-    	//Impulse Train
-    	impulse = synthesizeImpulse();
-    	data->g_impBuffer[i] = impulse;
-
-    	//Combine Audio for Output
-    	out[i] = ((sine + saw + tri + impulse) / 4) * data->amplitude;
     }
 
     g_ready = true;
@@ -229,24 +250,41 @@ static int paCallback( const void *inputBuffer,
 }
 
 //-----------------------------------------------------------------------------
-// Name: initialize_audio( RtAudio *dac )
-// Desc: Initializes PortAudio with the global vars and the stream
+// Name: initialize_audio()
+// Desc: Initializes PortAudio With Globals
 //-----------------------------------------------------------------------------
 void initialize_audio() 
 {
     PaStreamParameters outputParameters;
     PaError err;
 
+    /* Open the audio file */
+    if (( data.infile = sf_open( argv[1], SFM_READ, &data.sf_info1 ) ) == NULL ) {
+        printf("Error, couldn't open the file\n");
+        return EXIT_FAILURE;
+    }
+
+    /* Print info about audio file */
+    printf("Audio File:\nFrames: %d\nChannels: %d\nSampleRate: %d\n",
+            (int)data.sf_info1.frames, (int)data.sf_info1.channels, 
+            (int)data.sf_info1.samplerate);
+
     /* Initialize PortAudio */
     Pa_Initialize();
 
     /* Set output stream parameters */
     outputParameters.device = Pa_GetDefaultOutputDevice();
-    outputParameters.channelCount = g_channels;
+    outputParameters.channelCount = data.sfinfo1.channels;
     outputParameters.sampleFormat = paFloat32;
     outputParameters.suggestedLatency = 
         Pa_GetDeviceInfo( outputParameters.device )->defaultLowOutputLatency;
     outputParameters.hostApiSpecificStreamInfo = NULL;
+
+    /* Initialize SRC */
+    if ((data.src_state = src_new (data.src_converter_type, data.sfinfo1.channels, &data.src_error ) ) == NULL) {   
+        printf ("Error, SRC Initialization Failed\n");
+        return EXIT_FAILURE;
+    }
 
     /* Open audio stream */
     err = Pa_OpenStream( &g_stream,
@@ -268,12 +306,9 @@ void initialize_audio()
         printf(  "PortAudio error: start stream: %s\n", Pa_GetErrorText(err));
     }
 
-    //Initialize Audio Data
-    data.frequency = INIT_FREQUENCY;
-    data.amplitude = 1;
-    data.waveAmplitude = 1;
 }
 
+//Stops Port Audio
 void stop_portAudio() 
 {
     PaError err;
@@ -321,7 +356,7 @@ void keyboardFunc( unsigned char key, int x, int y )
                 glutReshapeWindow( g_last_width, g_last_height );
 
             g_fullscreen = !g_fullscreen;
-            printf("[synthGL]: fullscreen: %s\n", g_fullscreen ? "ON" : "OFF" );
+            printf("[Visualizer]: fullscreen: %s\n", g_fullscreen ? "ON" : "OFF" );
             break;
 
         //Change Frequency and Amplitude
@@ -347,6 +382,9 @@ void keyboardFunc( unsigned char key, int x, int y )
         case 'q':
             // Close Stream before exiting
             stop_portAudio();
+
+            // Cleanup SRC
+            src_delete (data.src_state);
 
             exit( 0 );
             break;
