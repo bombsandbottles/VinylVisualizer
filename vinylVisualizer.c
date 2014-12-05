@@ -52,7 +52,7 @@
 #define SAMPLE                  float
 #define MONO                    1
 #define STEREO                  2
-#define SRC_RATIO_INCREMENT     1
+#define SRC_RATIO_INCREMENT     0.1
 #define cmp_abs(x)              ( sqrt( (x).re * (x).re + (x).im * (x).im ) )
 #define PI                      3.14159265358979323846264338327950288
 #define ROTATION_INCR           .75f
@@ -72,9 +72,11 @@
     /* Sample Rate Converter Members */
     SRC_DATA  src_data;
     SRC_STATE* src_state;
+
     int src_error;
     int src_converter_type;
     double src_ratio;
+    
     float src_inBuffer[FRAMES_PER_BUFFER * STEREO];
     float src_outBuffer[FRAMES_PER_BUFFER * STEREO];
 
@@ -144,7 +146,7 @@ void initialize_glut(int argc, char *argv[]);
 
 /* Audio Processing Functions */
 void initialize_src_type();
-void initialize_audio();
+void initialize_audio(const char* inFile);
 void stop_portAudio();
 void initialize_SRC_DATA();
 
@@ -202,16 +204,17 @@ void initialize_src_type()
     printf("Enter a Number Between 0 and 4 : ");
 
     /* Get User Input */
-    // char c = (int)getchar();
-        // while (c > 4 || c < 0)
-        // {
-        //     printf("Error: Please Enter a Number Between 0 and 4 : \n");
-        //     c = (int)getchar();
-        //         if (c >= 0 || c <= 4)
-        //         {
-        //             break;
-        //         }
-        // }
+    // bool found = false;
+    // while (!found)
+    // {
+    //     c = (int)getchar();
+    //         if (c >= 0 || c <= 4)
+    //         {
+    //             found = true;
+    //         }
+    //     printf("Error: Please Enter a Number Between 0 and 4 : \n");
+    // }
+
     int c = 0;
     /* Intialize SRC Algorithm */
     data.src_converter_type = c;
@@ -244,42 +247,48 @@ void help()
 // Desc: Callback from PortAudio
 //-----------------------------------------------------------------------------
 static int paCallback( const void *inputBuffer,
-        void *outputBuffer, unsigned long framesPerBuffer,
+        void  *outputBuffer, unsigned long framesPerBuffer,
         const PaStreamCallbackTimeInfo* timeInfo,
         PaStreamCallbackFlags statusFlags, void *userData ) 
 {
-    //Cast Appropriate Types
+    /* Cast Appropriate Types and Define Some Usable Variables */
     (void) inputBuffer;
     float* out = (float*)outputBuffer;
     paData *data = (paData*)userData;
-
     int i, numberOfFrames;
 
-    //Read data from inFile
+    /* Read FramesPerBuffer Amount of Data from inFile into buffer[] */
     numberOfFrames = sf_readf_float(data->inFile, data->buffer, framesPerBuffer);
 
-    // printf("HEYEEYEHYEHEYHEHE\n");
-
-    //If end of inFile is reached, rewind
-    if (numberOfFrames < framesPerBuffer) {
+    /* Looping of inFile if EOF is Reached */
+    if (numberOfFrames < framesPerBuffer) 
+    {
         sf_seek(data->inFile, 0, SEEK_SET);
-        numberOfFrames = sf_readf_float (data->inFile, 
-                                               data->buffer+(numberOfFrames*data->sfinfo1.channels), 
-                                               framesPerBuffer-numberOfFrames);  
+        numberOfFrames = sf_readf_float(data->inFile, 
+                                        data->buffer+(numberOfFrames*data->sfinfo1.channels), 
+                                        framesPerBuffer-numberOfFrames);  
     }
 
+    /* Read Data from Buffer into SRC Data to Pass to src_process() */
     for (i = 0; i < framesPerBuffer * data->sfinfo1.channels; i++)
     {
-        //Read from inFile into src_data
         data->src_inBuffer[i] = data->buffer[i];
+    }
 
-        //Equal to 0 if more input data is available and 1 otherwise.
-        data->src_data.end_of_input = 0;
+    /* Inform SRC Data How Many Input Frames To Process */
+    data->src_data.input_frames = numberOfFrames;
+    data->src_data.end_of_input = 0;
 
-        //Perform SRC Modulation
-        src_process(data->src_state, &data->src_data);  
+     //Perform SRC Modulation
+    if ((data->src_error = src_process (data->src_state, &data->src_data)))
+    {   
+        printf ("\nError : %s\n\n", src_strerror (data->src_error)) ;
+        exit (1);
+    }  
 
-        //Write to Output
+    /* Write Processed SRC Data to Audio Out */
+    for (i = 0; i < framesPerBuffer * data->sfinfo1.channels; i++)
+    {
         out[i] = data->src_outBuffer[i];
     }
 
@@ -291,15 +300,16 @@ static int paCallback( const void *inputBuffer,
 // Name: initialize_audio()
 // Desc: Initializes PortAudio With Globals
 //-----------------------------------------------------------------------------
-void initialize_audio(char* inFile) 
+void initialize_audio(const char* inFile) 
 {
     PaStreamParameters outputParameters;
     PaError err;
 
     /* Open the audio file */
-    if (( data.inFile = sf_open( inFile, SFM_READ, &data.sfinfo1 ) ) == NULL ) {
+    if (( data.inFile = sf_open( inFile, SFM_READ, &data.sfinfo1 )) == NULL ) 
+    {
         printf("Error, Couldn't Open The File\n");
-        return;
+        exit (1);
     }
 
     /* Print info about audio file */
@@ -319,9 +329,10 @@ void initialize_audio(char* inFile)
     outputParameters.hostApiSpecificStreamInfo = NULL;
 
     /* Initialize SRC */
-    if ((data.src_state = src_new (data.src_converter_type, data.sfinfo1.channels, &data.src_error ) ) == NULL) {   
+    if ((data.src_state = src_new (data.src_converter_type, data.sfinfo1.channels, &data.src_error )) == NULL) 
+    {   
         printf ("Error, SRC Initialization Failed\n");
-        return;
+        exit (1);
     }
 
     /* Sets Up The SRC_DATA Struct */
@@ -380,9 +391,13 @@ void stop_portAudio()
 //-----------------------------------------------------------------------------
 void initialize_SRC_DATA()
 {
-    data.src_data.data_in = data.src_inBuffer;       //Point to SRC inBuffer
-    data.src_data.data_out = data.src_outBuffer;      //Point to SRC OutBuffer
-    data.src_data.src_ratio = data.src_ratio;
+    data.src_ratio = 1;                             //Sets Default Playback Speed
+    /*---------------*/
+    data.src_data.data_in = data.src_inBuffer;      //Point to SRC inBuffer
+    data.src_data.data_out = data.src_outBuffer;    //Point to SRC OutBuffer
+    data.src_data.input_frames = 0;                 //Start with Zero to Force Load
+    data.src_data.output_frames = FRAMES_PER_BUFFER;//Number of Frames to Write Out
+    data.src_data.src_ratio = data.src_ratio;       //Sets Default Playback Speed
 }
 
 //-----------------------------------------------------------------------------
@@ -416,10 +431,10 @@ void keyboardFunc( unsigned char key, int x, int y )
 
         //Change Frequency and Amplitude
         case '+':
-            data.src_ratio += SRC_RATIO_INCREMENT;
+            data.src_data.src_ratio += SRC_RATIO_INCREMENT;
             break;
         case '-':
-            data.src_ratio -= SRC_RATIO_INCREMENT;
+            data.src_data.src_ratio -= SRC_RATIO_INCREMENT;
             break;
         // case 'm':
         //     if (data.amplitude == 1)
@@ -441,7 +456,7 @@ void keyboardFunc( unsigned char key, int x, int y )
             // Cleanup SRC
             src_delete (data.src_state);
 
-            exit( 0 );
+            exit(0);
             break;
     }
 }
