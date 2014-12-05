@@ -7,11 +7,11 @@
  *   CProgramming Final Project 2014
  *
  *   Description:  A Vinyl Inspired Audio Visualizer With 
- *                Interactive Filtering and Sample Rate Modulation.
+ *                  Interactive Filtering and Sample Rate Modulation.
  *
  *   Credits : 
  *   Time Domain Based Filters Based Off - http://www.mega-nerd.com/Res/IADSPL/RBJ-filters.txt
- *   Sample Rate Modulation From - http://www.mega-nerd.com/SRC/api_full.html
+ *   Sample Rate Modulation API - http://www.mega-nerd.com/SRC/api_full.html
  * ===========================================================================================
  */
 #include <stdio.h>
@@ -64,9 +64,10 @@
  typedef struct {
     
     /* Audio File Members */
-    SNDFILE* infile;
-    SF_INFO sf_info1;
+    SNDFILE* inFile;
+    SF_INFO sfinfo1;
     float buffer[FRAMES_PER_BUFFER * STEREO];
+    int numberOfFrames;
 
     /* Sample Rate Converter Members */
     SRC_DATA  src_data;
@@ -74,18 +75,20 @@
     int src_error;
     int src_converter_type;
     double src_ratio;
+    float src_inBuffer[FRAMES_PER_BUFFER * STEREO];
+    float src_outBuffer[FRAMES_PER_BUFFER * STEREO];
 
-    //LOWPASS
+    /* Low Pass Filter Members */
 
-    //HIGH PASS
+    /* High Pass Filter Members */
+
+    /* OpenGL Members */
     
 } paData;
 
 //Global Data Initialized
 paData data;
 PaStream *g_stream;
-
-
 
 // WxH Of OpenGL Window
 GLsizei g_width = INIT_WIDTH;
@@ -97,7 +100,7 @@ typedef double  MY_TYPE;
 typedef char BYTE;   // 8-bit unsigned entity.
 
 // global audio vars
-GLint g_buffer_size = BUFFER_SIZE;
+GLint g_buffer_size = FRAMES_PER_BUFFER;
 
 // Threads Management
 GLboolean g_ready = false;
@@ -143,6 +146,10 @@ void initialize_glut(int argc, char *argv[]);
 void initialize_src_type();
 void initialize_audio();
 void stop_portAudio();
+void initialize_SRC_DATA();
+
+/* Command Line Prints */
+void help();
 
 //Harrison Added
 void drawTimeDomain(SAMPLE *buffer, float R, float G, float B, int y); 
@@ -168,7 +175,7 @@ int main( int argc, char *argv[] )
     initialize_glut(argc, argv);
 
     /* Initialize PortAudio */
-    initialize_audio();
+    initialize_audio(argv[1]);
 
     /* Print Help */
     help();
@@ -186,23 +193,29 @@ int main( int argc, char *argv[] )
 void initialize_src_type()
 {
     /* Print User Menu */
-    printf("Choose The Quality of Sample Rate Conversion\n
-            Best Quality = 0\n
-            Medium Quality = 1\n
-            Fastest Quality = 2\n
-            Zero Order Hold = 3\n
-            Linear Processing = 4\n");
-    printf("Enter a Number Between 0 and 4 : \n");
+    printf("\nChoose The Quality of Sample Rate Conversion\n"
+            "Best Quality = 0\n"
+            "Medium Quality = 1\n"
+            "Fastest Quality = 2\n"
+            "Zero Order Hold = 3\n"
+            "Linear Processing = 4\n");
+    printf("Enter a Number Between 0 and 4 : ");
 
     /* Get User Input */
-    char c = (int)getchar();
-        while (c < 0 || c > 4)
-        {
-            printf("Error: Please Enter a Number Between 0 and 4 : \n");
-            c = (int)getchar();
-        }
-    //Store C into Data
+    // char c = (int)getchar();
+        // while (c > 4 || c < 0)
+        // {
+        //     printf("Error: Please Enter a Number Between 0 and 4 : \n");
+        //     c = (int)getchar();
+        //         if (c >= 0 || c <= 4)
+        //         {
+        //             break;
+        //         }
+        // }
+    int c = 0;
+    /* Intialize SRC Algorithm */
     data.src_converter_type = c;
+    printf("%d\n", data.src_converter_type);
 
 }
 
@@ -213,7 +226,7 @@ void initialize_src_type()
 void help()
 {
     /* Print Command Line Instructions */
-    printf( "----------------------------------------------------\n" );
+    printf( "\n----------------------------------------------------\n" );
     printf( "Vinyl Visualizer\n" );
     printf( "----------------------------------------------------\n" );
     printf( "'h' - print this help message\n" );
@@ -237,12 +250,37 @@ static int paCallback( const void *inputBuffer,
 {
     //Cast Appropriate Types
     (void) inputBuffer;
-    SAMPLE* out = (SAMPLE*)outputBuffer;
+    float* out = (float*)outputBuffer;
     paData *data = (paData*)userData;
 
-    for (int i = 0; i < framesPerBuffer; i++)
-    {
+    int i, numberOfFrames;
 
+    //Read data from inFile
+    numberOfFrames = sf_readf_float(data->inFile, data->buffer, framesPerBuffer);
+
+    // printf("HEYEEYEHYEHEYHEHE\n");
+
+    //If end of inFile is reached, rewind
+    if (numberOfFrames < framesPerBuffer) {
+        sf_seek(data->inFile, 0, SEEK_SET);
+        numberOfFrames = sf_readf_float (data->inFile, 
+                                               data->buffer+(numberOfFrames*data->sfinfo1.channels), 
+                                               framesPerBuffer-numberOfFrames);  
+    }
+
+    for (i = 0; i < framesPerBuffer * data->sfinfo1.channels; i++)
+    {
+        //Read from inFile into src_data
+        data->src_inBuffer[i] = data->buffer[i];
+
+        //Equal to 0 if more input data is available and 1 otherwise.
+        data->src_data.end_of_input = 0;
+
+        //Perform SRC Modulation
+        src_process(data->src_state, &data->src_data);  
+
+        //Write to Output
+        out[i] = data->src_outBuffer[i];
     }
 
     g_ready = true;
@@ -253,21 +291,21 @@ static int paCallback( const void *inputBuffer,
 // Name: initialize_audio()
 // Desc: Initializes PortAudio With Globals
 //-----------------------------------------------------------------------------
-void initialize_audio() 
+void initialize_audio(char* inFile) 
 {
     PaStreamParameters outputParameters;
     PaError err;
 
     /* Open the audio file */
-    if (( data.infile = sf_open( argv[1], SFM_READ, &data.sf_info1 ) ) == NULL ) {
-        printf("Error, couldn't open the file\n");
-        return EXIT_FAILURE;
+    if (( data.inFile = sf_open( inFile, SFM_READ, &data.sfinfo1 ) ) == NULL ) {
+        printf("Error, Couldn't Open The File\n");
+        return;
     }
 
     /* Print info about audio file */
-    printf("Audio File:\nFrames: %d\nChannels: %d\nSampleRate: %d\n",
-            (int)data.sf_info1.frames, (int)data.sf_info1.channels, 
-            (int)data.sf_info1.samplerate);
+    printf("\nAudio File: %s\nFrames: %d\nSamples: %d\nChannels: %d\nSampleRate: %d\n",
+            inFile, (int)data.sfinfo1.frames, (int)data.sfinfo1.frames * (int)data.sfinfo1.channels,
+            (int)data.sfinfo1.channels, (int)data.sfinfo1.samplerate);
 
     /* Initialize PortAudio */
     Pa_Initialize();
@@ -283,8 +321,11 @@ void initialize_audio()
     /* Initialize SRC */
     if ((data.src_state = src_new (data.src_converter_type, data.sfinfo1.channels, &data.src_error ) ) == NULL) {   
         printf ("Error, SRC Initialization Failed\n");
-        return EXIT_FAILURE;
+        return;
     }
+
+    /* Sets Up The SRC_DATA Struct */
+    initialize_SRC_DATA();   
 
     /* Open audio stream */
     err = Pa_OpenStream( &g_stream,
@@ -308,7 +349,10 @@ void initialize_audio()
 
 }
 
-//Stops Port Audio
+//-----------------------------------------------------------------------------
+// Name: void stop_portAudio() 
+// Desc: //Stops Port Audio
+//-----------------------------------------------------------------------------
 void stop_portAudio() 
 {
     PaError err;
@@ -328,6 +372,17 @@ void stop_portAudio()
     if (err != paNoError) {
         printf("PortAudio error: terminate: %s\n", Pa_GetErrorText(err));
     }
+}
+
+//-----------------------------------------------------------------------------
+// Name: initialize_SRC_DATA()
+// Desc: Sets Up The SRC_DATA Struct to Pass to src_process(SRC_STATE *state, SRC_DATA *data)
+//-----------------------------------------------------------------------------
+void initialize_SRC_DATA()
+{
+    data.src_data.data_in = data.src_inBuffer;       //Point to SRC inBuffer
+    data.src_data.data_out = data.src_outBuffer;      //Point to SRC OutBuffer
+    data.src_data.src_ratio = data.src_ratio;
 }
 
 //-----------------------------------------------------------------------------
@@ -361,23 +416,23 @@ void keyboardFunc( unsigned char key, int x, int y )
 
         //Change Frequency and Amplitude
         case '+':
-            data.frequency += FREQUENCY_INCR;
+            data.src_ratio += SRC_RATIO_INCREMENT;
             break;
         case '-':
-            data.frequency -= FREQUENCY_INCR;
+            data.src_ratio -= SRC_RATIO_INCREMENT;
             break;
-        case 'm':
-            if (data.amplitude == 1)
-            {
-                //Mute
-                data.amplitude = 0;
-            }
-            else if (data.amplitude == 0)
-            {
-                //UnMute
-                data.amplitude = 1;
-            }
-            break;
+        // case 'm':
+        //     if (data.amplitude == 1)
+        //     {
+        //         //Mute
+        //         data.amplitude = 0;
+        //     }
+        //     else if (data.amplitude == 0)
+        //     {
+        //         //UnMute
+        //         data.amplitude = 1;
+        //     }
+        //     break;
 
         case 'q':
             // Close Stream before exiting
@@ -579,20 +634,20 @@ void initialize_graphics()
 void displayFunc( )
 {
     // local variables
-    SAMPLE sinBuffer[g_buffer_size];
-    SAMPLE triBuffer[g_buffer_size];
-    SAMPLE sawBuffer[g_buffer_size];
-    SAMPLE impBuffer[g_buffer_size];
-    SAMPLE outBuffer[g_buffer_size];
+    // SAMPLE sinBuffer[g_buffer_size];
+    // SAMPLE triBuffer[g_buffer_size];
+    // SAMPLE sawBuffer[g_buffer_size];
+    // SAMPLE impBuffer[g_buffer_size];
+    // SAMPLE outBuffer[g_buffer_size];
 
     // wait for data
     while( !g_ready ) usleep( 1000 );
 
     // copy currently playing audio into buffer
-    memcpy( sinBuffer, data.g_sinBuffer, g_buffer_size * sizeof(SAMPLE) );
-    memcpy( triBuffer, data.g_triBuffer, g_buffer_size * sizeof(SAMPLE) );
-    memcpy( sawBuffer, data.g_sawBuffer, g_buffer_size * sizeof(SAMPLE) );
-    memcpy( impBuffer, data.g_impBuffer, g_buffer_size * sizeof(SAMPLE) );
+    // memcpy( sinBuffer, data.g_sinBuffer, g_buffer_size * sizeof(SAMPLE) );
+    // memcpy( triBuffer, data.g_triBuffer, g_buffer_size * sizeof(SAMPLE) );
+    // memcpy( sawBuffer, data.g_sawBuffer, g_buffer_size * sizeof(SAMPLE) );
+    // memcpy( impBuffer, data.g_impBuffer, g_buffer_size * sizeof(SAMPLE) );
     //memcpy( outBuffer, data.g_outBuffer, g_buffer_size * sizeof(SAMPLE) );
 
     // Hand off to audio callback thread
@@ -602,10 +657,10 @@ void displayFunc( )
     glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
     // TODO: Draw the signals on the screeen
-    drawTimeDomain(sinBuffer, 0.0, 1.0, 0.0, 3); //Draws Sine
-    drawTimeDomain(triBuffer, 0.0, 0.0, 1.0, 1); //Draws Triangle
-    drawTimeDomain(sawBuffer, 1.0, 0.0, 0.0, -1); //Draws Saw
-    drawTimeDomain(impBuffer, 0.9, 0.5, 0.3, -3); //Draws Impulse
+    // drawTimeDomain(sinBuffer, 0.0, 1.0, 0.0, 3); //Draws Sine
+    // drawTimeDomain(triBuffer, 0.0, 0.0, 1.0, 1); //Draws Triangle
+    // drawTimeDomain(sawBuffer, 1.0, 0.0, 0.0, -1); //Draws Saw
+    // drawTimeDomain(impBuffer, 0.9, 0.5, 0.3, -3); //Draws Impulse
 
     // flush gl commands
     glFlush( );
