@@ -46,15 +46,18 @@
 // global variables and #defines
 //-----------------------------------------------------------------------------
 #define SAMPLING_RATE           44100
-#define FRAMES_PER_BUFFER       256  
-#define BUFFER_SIZE             1024 
-#define FORMAT                  paFloat32
-#define SAMPLE                  float
+#define FRAMES_PER_BUFFER       256
 #define MONO                    1
 #define STEREO                  2
-#define SRC_RATIO_INCREMENT     0.1
-#define cmp_abs(x)              ( sqrt( (x).re * (x).re + (x).im * (x).im ) )
+#define ITEMS_PER_BUFFER        (FRAMES_PER_BUFFER * 2)
+#define FORMAT                  paFloat32
+#define SAMPLE                  float
+#define SRC_RATIO_INCREMENT     0.05
+#define LPF_INCREMENT           100//hz 
+#define HPF_INCREMENT           100//hz 
 #define PI                      3.14159265358979323846264338327950288
+
+#define cmp_abs(x)              ( sqrt( (x).re * (x).re + (x).im * (x).im ) )
 #define ROTATION_INCR           .75f
 #define INIT_WIDTH              1280
 #define INIT_HEIGHT             720
@@ -66,21 +69,29 @@
     /* Audio File Members */
     SNDFILE* inFile;
     SF_INFO sfinfo1;
-    float buffer[FRAMES_PER_BUFFER * STEREO];
+    float buffer[ITEMS_PER_BUFFER];
     int numberOfFrames;
+
+    float ampControl;
+    int mute;
 
     /* Sample Rate Converter Members */
     SRC_DATA  src_data;
     SRC_STATE* src_state;
 
+    bool src_On;
     int src_error;
     int src_converter_type;
     double src_ratio;
     
-    float src_inBuffer[FRAMES_PER_BUFFER * STEREO];
-    float src_outBuffer[FRAMES_PER_BUFFER * STEREO];
+    float src_inBuffer[ITEMS_PER_BUFFER];
+    float src_outBuffer[ITEMS_PER_BUFFER];
 
     /* Low Pass Filter Members */
+    bool  lpf_On;
+    float lpf_freq;
+    float lpf_res;
+    float lpf_outBuffer[ITEMS_PER_BUFFER];
 
     /* High Pass Filter Members */
 
@@ -101,10 +112,10 @@ GLsizei g_last_height = INIT_HEIGHT;
 typedef double  MY_TYPE;
 typedef char BYTE;   // 8-bit unsigned entity.
 
-// global audio vars
+//Global Audio Vars
 GLint g_buffer_size = FRAMES_PER_BUFFER;
 
-// Threads Management
+//Threads Management
 GLboolean g_ready = false;
 
 // Fill Mode
@@ -149,6 +160,7 @@ void initialize_src_type();
 void initialize_audio(const char* inFile);
 void stop_portAudio();
 void initialize_SRC_DATA();
+void lowPassFilter(float *inBuffer);
 
 /* Command Line Prints */
 void help();
@@ -205,16 +217,18 @@ void initialize_src_type()
 
     /* Get User Input */
     // bool found = false;
+    // int c;
+    // char* string;
     // while (!found)
     // {
-    //     c = (int)getchar();
+    //     string = gets(string);
+    //     c = atoi(string);
     //         if (c >= 0 || c <= 4)
     //         {
     //             found = true;
     //         }
     //     printf("Error: Please Enter a Number Between 0 and 4 : \n");
     // }
-
     int c = 0;
     /* Intialize SRC Algorithm */
     data.src_converter_type = c;
@@ -251,7 +265,7 @@ static int paCallback( const void *inputBuffer,
         const PaStreamCallbackTimeInfo* timeInfo,
         PaStreamCallbackFlags statusFlags, void *userData ) 
 {
-    /* Cast Appropriate Types and Define Some Usable Variables */
+    /* Cast Appropriate Types and Define Some Useful Variables */
     (void) inputBuffer;
     float* out = (float*)outputBuffer;
     paData *data = (paData*)userData;
@@ -279,17 +293,25 @@ static int paCallback( const void *inputBuffer,
     data->src_data.input_frames = numberOfFrames;
     data->src_data.end_of_input = 0;
 
-     //Perform SRC Modulation
+    /* Perform SRC Modulation, Processed Samples are in src_outBuffer[] */
     if ((data->src_error = src_process (data->src_state, &data->src_data)))
     {   
         printf ("\nError : %s\n\n", src_strerror (data->src_error)) ;
         exit (1);
-    }  
+    }
+
+    /* Perform Lowpass Filtering */
+    if (data->lpf_On == true)
+    {
+        lowPassFilter(data->src_outBuffer);
+    }
 
     /* Write Processed SRC Data to Audio Out */
     for (i = 0; i < framesPerBuffer * data->sfinfo1.channels; i++)
     {
-        out[i] = data->src_outBuffer[i];
+        data->lpf_outBuffer[i] = data->src_outBuffer[i];
+        out[i] = data->lpf_outBuffer[i];
+        // out[i] = data->src_outBuffer[i];
     }
 
     g_ready = true;
@@ -336,13 +358,16 @@ void initialize_audio(const char* inFile)
     }
 
     /* Sets Up The SRC_DATA Struct */
-    initialize_SRC_DATA();   
+    initialize_SRC_DATA();
+    data.lpf_On   = true;
+    data.lpf_freq = 1000;
+    data.lpf_res  = 1;   
 
     /* Open audio stream */
     err = Pa_OpenStream( &g_stream,
             NULL,
             &outputParameters,
-            SAMPLING_RATE, 
+            data.sfinfo1.samplerate, 
             g_buffer_size, 
             paNoFlag, 
             paCallback, 
@@ -396,8 +421,60 @@ void initialize_SRC_DATA()
     data.src_data.data_in = data.src_inBuffer;      //Point to SRC inBuffer
     data.src_data.data_out = data.src_outBuffer;    //Point to SRC OutBuffer
     data.src_data.input_frames = 0;                 //Start with Zero to Force Load
-    data.src_data.output_frames = FRAMES_PER_BUFFER;//Number of Frames to Write Out
+    data.src_data.output_frames = ITEMS_PER_BUFFER
+                            / data.sfinfo1.channels;//Number of Frames to Write Out
     data.src_data.src_ratio = data.src_ratio;       //Sets Default Playback Speed
+}
+
+//-----------------------------------------------------------------------------
+// Name: lowPassFilter(float *inBuffer)
+// Desc: Applies 2 Pole lowPassFilter based on http://www.mega-nerd.com/Res/IADSPL/RBJ-filters.txt
+//-----------------------------------------------------------------------------
+void lowPassFilter(float *inBuffer)
+{
+    // Difference Equation
+    /* y[n] = (b0/a0)*x[n] + (b1/a0)*x[n-1] + (b2/a0)*x[n-2] - (a1/a0)*y[n-1] - (a2/a0)*y[n-2] */
+    float   processed_sample;
+    int     i;
+    float   alpha, omega, cs;
+    float   a0, a1, a2, b0, b1, b2;
+
+    /* Account for Transient Response of Filter */
+    float   x1, x2, y1, y2;  
+            x1 = x2 = 0;
+            y1 = y2 = 0;
+
+    /* First Compute a Few Intermediate Variables */
+    omega = 2.0 * PI * data.lpf_freq / data.sfinfo1.samplerate;
+    alpha = sin(omega) / (2.0 * data.lpf_res);
+    cs    = cos(omega);
+
+    /* Calcuate Filter Coefficients */
+    b0 =  (1.0 - cs) / 2.0;
+    b1 =   1.0 - cs;
+    b2 =  (1.0 - cs) / 2.0;
+    a0 =   1.0 + alpha;
+    a1 =  -2.0 * cs;
+    a2 =   1.0 - alpha;
+
+    /* Lowpass the Chunk of Data */
+    for (i = 0; i < FRAMES_PER_BUFFER * data.sfinfo1.channels; i++)
+    {
+        /* Run a Sample Through the Difference Equation */
+        processed_sample = (b0/a0) * inBuffer[i] + (b1/a0) * x1 + (b2/a0) * x2 - 
+                           (a1/a0) * y1 - (a2/a0) * y2;
+
+        /* Shift the Samples in the Equation */
+        x2 = x1;
+        x1 = inBuffer[i];
+
+        /* Feedback Loop for Poles, Also Shift Samples */
+        y2 = y1;
+        y1 = processed_sample;
+
+        /* Return Lowpassed Sample into lpf_outBuffer[] */
+        inBuffer[i] = processed_sample;
+    }
 }
 
 //-----------------------------------------------------------------------------
@@ -430,12 +507,19 @@ void keyboardFunc( unsigned char key, int x, int y )
             break;
 
         //Change Frequency and Amplitude
-        case '+':
+        case '-':
             data.src_data.src_ratio += SRC_RATIO_INCREMENT;
             break;
-        case '-':
+        case '+':
             data.src_data.src_ratio -= SRC_RATIO_INCREMENT;
             break;
+        case 'j':
+            data.lpf_freq -= LPF_INCREMENT;
+            break;
+        case 'k':
+            data.lpf_freq += LPF_INCREMENT;
+            break;
+
         // case 'm':
         //     if (data.amplitude == 1)
         //     {
