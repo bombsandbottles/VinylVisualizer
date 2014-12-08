@@ -53,9 +53,11 @@
 #define FORMAT                  paFloat32
 #define SAMPLE                  float
 #define SRC_RATIO_INCREMENT     0.05
-#define LPF_INCREMENT           100//hz 
-#define HPF_INCREMENT           100//hz 
+#define FILTER_CUTOFF_INCREMENT 100 //hz 
+#define RESONANCE_INCREMENT     1   // Q Factor
 #define PI                      3.14159265358979323846264338327950288
+#define INITIAL_VOLUME          0.5
+#define VOLUME_INCREMENT        0.1
 
 #define cmp_abs(x)              ( sqrt( (x).re * (x).re + (x).im * (x).im ) )
 #define ROTATION_INCR           .75f
@@ -72,8 +74,7 @@
     float buffer[ITEMS_PER_BUFFER];
     int numberOfFrames;
 
-    float ampControl;
-    int mute;
+    float amplitude;
 
     /* Sample Rate Converter Members */
     SRC_DATA  src_data;
@@ -91,9 +92,11 @@
     bool  lpf_On;
     float lpf_freq;
     float lpf_res;
-    float lpf_outBuffer[ITEMS_PER_BUFFER];
 
     /* High Pass Filter Members */
+    bool  hpf_On;
+    float hpf_freq;
+    float hpf_res;
 
     /* OpenGL Members */
     
@@ -160,7 +163,9 @@ void initialize_src_type();
 void initialize_audio(const char* inFile);
 void stop_portAudio();
 void initialize_SRC_DATA();
+void initialize_Filters();
 void lowPassFilter(float *inBuffer);
+void highPassFilter(float *inBuffer);
 
 /* Command Line Prints */
 void help();
@@ -233,7 +238,6 @@ void initialize_src_type()
     /* Intialize SRC Algorithm */
     data.src_converter_type = c;
     printf("%d\n", data.src_converter_type);
-
 }
 
 //-----------------------------------------------------------------------------
@@ -248,8 +252,12 @@ void help()
     printf( "----------------------------------------------------\n" );
     printf( "'h' - print this help message\n" );
     printf( "'f' - toggle fullscreen\n" );
-    printf( "'j/k' - increase or decrease frequency by 5hz\n" );
-    printf( "'m' to mute output audio\n" );
+    printf( "'j/k' - Increase/Decrease LPF Freq. Cutoff by 100hz\n" );
+    printf( "'i/o' - Increase/Decrease LPF Resonance by 1.0 Q Factor\n" );
+    printf( "'s/d' - Increase/Decrease HPF Freq. Cutoff by 100hz\n" );
+    printf( "'w/e' - Increase/Decrease HPF Resonance by 1.0 Q Factor\n" );
+    printf( "'m' To Mute Output Audio\n" );
+    printf( "'r' Reset All Parameters\n" );
     printf( "'CURSOR ARROWS' - Change Speed Of Playback\n" );
     printf( "'q' - quit\n" );
     printf( "----------------------------------------------------\n" );
@@ -294,24 +302,25 @@ static int paCallback( const void *inputBuffer,
     data->src_data.end_of_input = 0;
 
     /* Perform SRC Modulation, Processed Samples are in src_outBuffer[] */
-    if ((data->src_error = src_process (data->src_state, &data->src_data)))
-    {   
+    if ((data->src_error = src_process (data->src_state, &data->src_data))) {   
         printf ("\nError : %s\n\n", src_strerror (data->src_error)) ;
         exit (1);
     }
 
     /* Perform Lowpass Filtering */
-    if (data->lpf_On == true)
-    {
+    if (data->lpf_On == true) {
         lowPassFilter(data->src_outBuffer);
+    }
+
+    /* Perform Highpass Filtering */
+    if (data->hpf_On == true) {
+        highPassFilter(data->src_outBuffer);
     }
 
     /* Write Processed SRC Data to Audio Out */
     for (i = 0; i < framesPerBuffer * data->sfinfo1.channels; i++)
     {
-        data->lpf_outBuffer[i] = data->src_outBuffer[i];
-        out[i] = data->lpf_outBuffer[i];
-        // out[i] = data->src_outBuffer[i];
+        out[i] = data->src_outBuffer[i] * data->amplitude;
     }
 
     g_ready = true;
@@ -359,9 +368,12 @@ void initialize_audio(const char* inFile)
 
     /* Sets Up The SRC_DATA Struct */
     initialize_SRC_DATA();
-    data.lpf_On   = true;
-    data.lpf_freq = 1000;
-    data.lpf_res  = 1;   
+
+    /* Sets Up Filters */
+    initialize_Filters();
+
+    /* Set Initial Amplitude */
+    data.amplitude = INITIAL_VOLUME;
 
     /* Open audio stream */
     err = Pa_OpenStream( &g_stream,
@@ -427,6 +439,23 @@ void initialize_SRC_DATA()
 }
 
 //-----------------------------------------------------------------------------
+// Name: initialize_Filters()
+// Desc: Sets Default Filter Settings
+//-----------------------------------------------------------------------------
+void initialize_Filters()
+{
+    /* Lowpass Filter */
+    data.lpf_On   = false;  //Default Off
+    data.lpf_freq = 20000;  //Max Open
+    data.lpf_res  = 1;      //No Resonance
+
+    /* Highpas Filter */
+    data.hpf_On   = false;  //Default Off
+    data.hpf_freq = 20;     //Max Closed
+    data.hpf_res  = 1;      //No Resonance
+}
+
+//-----------------------------------------------------------------------------
 // Name: lowPassFilter(float *inBuffer)
 // Desc: Applies 2 Pole lowPassFilter based on http://www.mega-nerd.com/Res/IADSPL/RBJ-filters.txt
 //-----------------------------------------------------------------------------
@@ -464,15 +493,70 @@ void lowPassFilter(float *inBuffer)
         processed_sample = (b0/a0) * inBuffer[i] + (b1/a0) * x1 + (b2/a0) * x2 - 
                            (a1/a0) * y1 - (a2/a0) * y2;
 
-        /* Shift the Samples in the Equation */
-        x2 = x1;
-        x1 = inBuffer[i];
+            /***********/
+            /* Shift the Samples in the Equation So That n-1 == n */
+            x2 = x1;
+            x1 = inBuffer[i];
 
-        /* Feedback Loop for Poles, Also Shift Samples */
-        y2 = y1;
-        y1 = processed_sample;
+            /* Feedback Loop for Poles, Also Shift Samples So That n-1 == n */
+            y2 = y1;
+            y1 = processed_sample;
+            /***********/
 
         /* Return Lowpassed Sample into lpf_outBuffer[] */
+        inBuffer[i] = processed_sample;
+    }
+}
+
+//-----------------------------------------------------------------------------
+// Name: lowPassFilter(float *inBuffer)
+// Desc: Applies 2 Pole lowPassFilter based on http://www.mega-nerd.com/Res/IADSPL/RBJ-filters.txt
+//-----------------------------------------------------------------------------
+void highPassFilter(float *inBuffer)
+{
+    // Difference Equation
+    /* y[n] = (b0/a0)*x[n] + (b1/a0)*x[n-1] + (b2/a0)*x[n-2] - (a1/a0)*y[n-1] - (a2/a0)*y[n-2] */
+    float   processed_sample;
+    int     i;
+    float   alpha, omega, cs;
+    float   a0, a1, a2, b0, b1, b2;
+
+    /* Account for Transient Response of Filter */
+    float   x1, x2, y1, y2;  
+            x1 = x2 = 0;
+            y1 = y2 = 0;
+
+    /* First Compute a Few Intermediate Variables */
+    omega = 2.0 * PI * data.hpf_freq / data.sfinfo1.samplerate;
+    alpha = sin(omega) / (2.0 * data.hpf_res);
+    cs    = cos(omega);
+
+    /* Calcuate Filter Coefficients */
+    b0 =  (1.0 + cs) / 2.0 ;
+    b1 = -(1.0 + cs) ;
+    b2 =  (1.0 + cs) / 2.0 ;
+    a0 =   1.0 + alpha ;
+    a1 =  -2.0 * cs ;
+    a2 =   1.0 - alpha ;
+
+    /* Lowpass the Chunk of Data */
+    for (i = 0; i < FRAMES_PER_BUFFER * data.sfinfo1.channels; i++)
+    {
+        /* Run a Sample Through the Difference Equation */
+        processed_sample = (b0/a0) * inBuffer[i] + (b1/a0) * x1 + (b2/a0) * x2 - 
+                           (a1/a0) * y1 - (a2/a0) * y2;
+
+            /***********/
+            /* Shift the Samples in the Equation So That n-1 == n */
+            x2 = x1;
+            x1 = inBuffer[i];
+
+            /* Feedback Loop for Poles, Also Shift Samples So That n-1 == n */
+            y2 = y1;
+            y1 = processed_sample;
+            /***********/
+
+        /* Return Highpassed Sample into lpf_outBuffer[] */
         inBuffer[i] = processed_sample;
     }
 }
@@ -483,15 +567,14 @@ void lowPassFilter(float *inBuffer)
 //-----------------------------------------------------------------------------
 void keyboardFunc( unsigned char key, int x, int y )
 {
+    initscr(); /* Start Curses Mode */
+    cbreak();  /* Line Buffering Disabled*/
+    noecho();  /* Comment This Out if You Want to Show Characters When They Are Typed */ 
+
     //printf("key: %c\n", key);
     switch( key )
     {
-        // Print Help
-        case 'h':
-            help();
-            break;
-
-        // Fullscreen
+        /* Fullscreen */
         case 'f':
             if( !g_fullscreen )
             {
@@ -506,40 +589,169 @@ void keyboardFunc( unsigned char key, int x, int y )
             printf("[Visualizer]: fullscreen: %s\n", g_fullscreen ? "ON" : "OFF" );
             break;
 
-        //Change Frequency and Amplitude
+        /* Resets Normal Default Playback */
+        case 'r':
+            data.src_data.src_ratio = 1;     //Sets Default Playback Speed
+            initialize_Filters();
+            data.amplitude = INITIAL_VOLUME;
+            break;
+
+        /* Temp Change SRC Ratio */
         case '-':
             data.src_data.src_ratio += SRC_RATIO_INCREMENT;
             break;
         case '+':
             data.src_data.src_ratio -= SRC_RATIO_INCREMENT;
             break;
+
+        /* Low Pass Filter Controls */
+        /****************************/
+        /* Engage/Disengage Filter  */
+        case 'l':
+            if (data.lpf_On == false)
+            {
+                //Power On
+                data.lpf_On = true;
+            }
+            else if (data.lpf_On == true)
+            {
+                //Power Off
+                data.lpf_On = false;
+            }
+            break;
+
+        /* Increase/Decrease Lpf Freq Cutoff */
         case 'j':
-            data.lpf_freq -= LPF_INCREMENT;
-            break;
+            data.lpf_freq -= FILTER_CUTOFF_INCREMENT;
+                if (data.lpf_freq < 20)
+                {
+                    printf("Min Frequency Reached : 20hz\n");
+                    data.lpf_freq = 20;
+                }
+                break;
         case 'k':
-            data.lpf_freq += LPF_INCREMENT;
+            data.lpf_freq += FILTER_CUTOFF_INCREMENT;
+                if (data.lpf_freq > 20000)
+                {
+                    printf("Max Frequency Reached : 20khz\n");
+                    data.lpf_freq = 20000;
+                }
+                break;
+
+        /* Increase/Decrease Lpf Resonance  */
+        case 'i':
+            data.lpf_res  -= RESONANCE_INCREMENT;
+                if (data.lpf_res <= 0)
+                {
+                    printf("Min Resonance Reached : 0\n");
+                    data.lpf_res = 0;
+                }
+                break;
+        case 'o':
+            data.lpf_res  += RESONANCE_INCREMENT;
+                if (data.lpf_res >= 10)
+                {
+                    printf("Max Resonance Reached : 10\n");
+                    data.lpf_res = 10;
+                }
+                break;
+
+        /* High Pass Filter Controls */
+        /*****************************/
+        /* Engage/Disengage Filter   */
+        case 'a':
+            if (data.hpf_On == false)
+            {
+                //Power On
+                data.hpf_On = true;
+            }
+            else if (data.hpf_On == true)
+            {
+                //Power Off
+                data.hpf_On = false;
+            }
+            break;                
+
+        /* Increase/Decrease Hpf Freq Cutoff */
+        case 's':
+            data.hpf_freq -= FILTER_CUTOFF_INCREMENT;
+                if (data.hpf_freq < 20)
+                {
+                    printf("Min Frequency Reached : 20hz\n");
+                    data.hpf_freq = 20;
+                }
+                mvprintw(0,0,"Hpf: %.2f",data.hpf_freq);
+                refresh();
+                break;
+        case 'd':
+            data.hpf_freq += FILTER_CUTOFF_INCREMENT;
+                if (data.hpf_freq > 20000)
+                {
+                    printf("Max Frequency Reached : 20khz\n");
+                    data.hpf_freq = 20000;
+                }
+                mvprintw(0,0,"Hpf: %.2f",data.hpf_freq);
+                refresh();
+                break;
+
+        /* Increase/Decrease Lpf Resonance  */
+        case 'w':
+            data.hpf_res  -= RESONANCE_INCREMENT;
+                if (data.hpf_res <= 0)
+                {
+                    printf("Min Resonance Reached : 0\n");
+                    data.hpf_res = 0;
+                }
+                break;
+        case 'e':
+            data.hpf_res  += RESONANCE_INCREMENT;
+                if (data.hpf_res >= 10)
+                {
+                    printf("Max Resonance Reached : 10\n");
+                    data.hpf_res = 10;
+                }
+                break;
+
+        /* Amplitude Controls */
+        /*****************************/
+        /* Mute Output   */
+        case 'm':
+            if (data.amplitude > 0 )
+            {
+                //Mute
+                data.amplitude = 0;
+            }
+            else if (data.amplitude == 0)
+            {
+                //UnMute
+                data.amplitude = INITIAL_VOLUME;
+            }
             break;
 
-        // case 'm':
-        //     if (data.amplitude == 1)
-        //     {
-        //         //Mute
-        //         data.amplitude = 0;
-        //     }
-        //     else if (data.amplitude == 0)
-        //     {
-        //         //UnMute
-        //         data.amplitude = 1;
-        //     }
-        //     break;
+        /* Increase/Decrease Amplitude of Playbacl */
+        case ',': 
+            data.amplitude -= VOLUME_INCREMENT; 
+            if (data.amplitude < 0) {
+                data.amplitude = 0;
+            }
+            break;
+        case '.': 
+            data.amplitude += VOLUME_INCREMENT;
+            if (data.amplitude > 1) {
+                data.amplitude = 1;
+            } 
+            break;
 
+        /* Exit */
         case 'q':
-            // Close Stream before exiting
+            /* Close Stream Before Exiting */
             stop_portAudio();
 
-            // Cleanup SRC
+            /* Cleanup SRC */
             src_delete (data.src_state);
 
+            /* End Curses Mode */
+            endwin(); 
             exit(0);
             break;
     }
