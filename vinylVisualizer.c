@@ -46,7 +46,7 @@
 // global variables and #defines
 //-----------------------------------------------------------------------------
 #define SAMPLING_RATE           44100
-#define FRAMES_PER_BUFFER       256
+#define FRAMES_PER_BUFFER       1024
 #define MONO                    1
 #define STEREO                  2
 #define ITEMS_PER_BUFFER        (FRAMES_PER_BUFFER * 2)
@@ -61,6 +61,7 @@
 
 #define cmp_abs(x)              ( sqrt( (x).re * (x).re + (x).im * (x).im ) )
 #define ROTATION_INCR           .75f
+#define WATERFALL_SIZE          20 
 #define INIT_WIDTH              1280
 #define INIT_HEIGHT             720
 
@@ -100,6 +101,7 @@
 
     /* OpenGL Members */
     float gl_audioBuffer[ITEMS_PER_BUFFER];
+    float gl_waterfall[WATERFALL_SIZE][ITEMS_PER_BUFFER];
     
 } paData;
 
@@ -162,7 +164,7 @@ void initialize_graphics( );
 void initialize_glut(int argc, char *argv[]);
 void drawTimeDomain(SAMPLE *buffer, float R, float G, float B); 
 void rotateView();
-void drawCircle(float r, int num_segments, float* buffer);
+void drawCircle(float r, int num_segments, float* buffer, bool scalar);
 
 /* Audio Processing Functions */
 void initialize_src_type();
@@ -952,12 +954,14 @@ void displayFunc( )
 {
     /* Local Vairables */
     float visualBuffer[g_buffer_size];
+    float visualBuffer2[g_buffer_size];
 
     /* Wait for Data */
     while( !g_ready ) usleep( 1000 );
 
     /* Copy Currently Playing Audio Into Buffer */
     memcpy( visualBuffer, data.src_outBuffer, g_buffer_size * sizeof(float) );
+    memcpy( visualBuffer2, data.src_outBuffer, g_buffer_size * sizeof(float) );
 
     /* Hand Off to Audio Callback Thread */
     g_ready = false;
@@ -966,7 +970,8 @@ void displayFunc( )
     glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
     /* Draw the Signal On The Screen */
-    drawCircle(3, g_buffer_size, visualBuffer); 
+    drawCircle(3, g_buffer_size, visualBuffer, false);  //Outer Circle
+    drawCircle(3, g_buffer_size, visualBuffer, true);   //Inner Circle
 
     // flush gl commands
     glFlush( );
@@ -980,7 +985,7 @@ void displayFunc( )
 // Desc: Draws a Circle based on Radius r, length, and sample buffer
 // Circle Skeleton From - http://slabode.exofire.net/circle_draw.shtml
 //-----------------------------------------------------------------------------
-void drawCircle(float r, int num_segments, float* buffer) 
+void drawCircle(float r, int num_segments, float* buffer, bool scalar) 
 { 
     float theta = 2 * PI / (float)num_segments; 
     float tangetial_factor = tanf(theta);//calculate the tangential factor 
@@ -988,13 +993,13 @@ void drawCircle(float r, int num_segments, float* buffer)
     
     float x = r;//we start at angle = 0 
     float y = 0; 
-    int   i;
+    int   i, k;
 
     // Get the actual volume
     GLfloat rms = computeRMS(buffer);
 
     // Get the value to scale the speaker based on the rms volume
-    GLfloat scale = (rms * 2 + 0.01); 
+    GLfloat scale = (rms * 2 + 0.3)/1.5; 
 
     glPushMatrix(); 
     {
@@ -1005,8 +1010,11 @@ void drawCircle(float r, int num_segments, float* buffer)
         rotateView();
 
         /* Scale Size of Circle Based on Track Amplitude */
-        glScalef(scale, scale, scale);        
-        
+        if (scalar == true)
+        {
+            glScalef(scale, scale, scale);  
+        }
+
         glBegin(GL_LINE_LOOP); 
             for (i = 0; i < num_segments; i++) 
             { 
@@ -1015,7 +1023,9 @@ void drawCircle(float r, int num_segments, float* buffer)
                 
                 /* Animate Circle Z-Depth Based on Track Amplitude */
                 glVertex3f(x + 0, y + 0, buffer[i]); 
-                
+                                
+                glRotatef(buffer[i], buffer[i], buffer[i], buffer[i]);
+               
                 /* Calculate the Tangential Vector 
                    Remember, the Radial Vector is (x, y), 
                    to Get the Tangential Vector we Flip Those Coordinates and Negate One of Them */
