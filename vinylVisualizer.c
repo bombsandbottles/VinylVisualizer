@@ -77,12 +77,12 @@
     float amplitude;
 
     /* Sample Rate Converter Members */
-    SRC_DATA  src_data;
+    SRC_DATA   src_data;
     SRC_STATE* src_state;
 
-    bool src_On;
-    int src_error;
-    int src_converter_type;
+    bool   src_On;
+    int    src_error;
+    int    src_converter_type;
     double src_ratio;
     
     float src_inBuffer[ITEMS_PER_BUFFER];
@@ -99,6 +99,7 @@
     float hpf_res;
 
     /* OpenGL Members */
+    float gl_audioBuffer[ITEMS_PER_BUFFER];
     
 } paData;
 
@@ -149,6 +150,8 @@ bool g_key_rotate_x =  false;
 //-----------------------------------------------------------------------------
 // Function Prototypes
 //-----------------------------------------------------------------------------
+
+/* OpenGL Functions */
 void idleFunc( );
 void displayFunc( );
 void reshapeFunc( int width, int height );
@@ -157,6 +160,9 @@ void specialKey( int key, int x, int y );
 void specialUpKey( int key, int x, int y);
 void initialize_graphics( );
 void initialize_glut(int argc, char *argv[]);
+void drawTimeDomain(SAMPLE *buffer, float R, float G, float B); 
+void rotateView();
+void drawCircle(float r, int num_segments, float* buffer);
 
 /* Audio Processing Functions */
 void initialize_src_type();
@@ -164,15 +170,14 @@ void initialize_audio(const char* inFile);
 void stop_portAudio();
 void initialize_SRC_DATA();
 void initialize_Filters();
-void lowPassFilter(float *inBuffer);
-void highPassFilter(float *inBuffer);
+static void lowPassFilter(float *inBuffer);
+static void highPassFilter(float *inBuffer);
+float computeRMS(SAMPLE *buffer);
 
 /* Command Line Prints */
 void help();
 
-//Harrison Added
-void drawTimeDomain(SAMPLE *buffer, float R, float G, float B, int y); 
-void rotateView();
+
 
 
 //-----------------------------------------------------------------------------
@@ -250,16 +255,17 @@ void help()
     printf( "\n----------------------------------------------------\n" );
     printf( "Vinyl Visualizer\n" );
     printf( "----------------------------------------------------\n" );
-    printf( "'h' - print this help message\n" );
-    printf( "'f' - toggle fullscreen\n" );
+    printf( "'h'   - print this help message\n" );
+    printf( "'f'   - toggle fullscreen\n" );
     printf( "'j/k' - Increase/Decrease LPF Freq. Cutoff by 100hz\n" );
     printf( "'i/o' - Increase/Decrease LPF Resonance by 1.0 Q Factor\n" );
     printf( "'s/d' - Increase/Decrease HPF Freq. Cutoff by 100hz\n" );
     printf( "'w/e' - Increase/Decrease HPF Resonance by 1.0 Q Factor\n" );
-    printf( "'m' To Mute Output Audio\n" );
-    printf( "'r' Reset All Parameters\n" );
+    printf( "',/.' - Increase/Decrease Volume\n" );
+    printf( "'m'   - To Mute Output Audio\n" );
+    printf( "'r'   - Reset All Parameters\n" );
     printf( "'CURSOR ARROWS' - Change Speed Of Playback\n" );
-    printf( "'q' - quit\n" );
+    printf( "'q'   - quit\n" );
     printf( "----------------------------------------------------\n" );
     printf( "\n" );
 }
@@ -317,9 +323,10 @@ static int paCallback( const void *inputBuffer,
         highPassFilter(data->src_outBuffer);
     }
 
-    /* Write Processed SRC Data to Audio Out */
+    /* Write Processed SRC Data to Audio Out and Visual Out */
     for (i = 0; i < framesPerBuffer * data->sfinfo1.channels; i++)
     {
+        // gl_audioBuffer[i] = data->src_outBuffer[i] * data->amplitude;   
         out[i] = data->src_outBuffer[i] * data->amplitude;
     }
 
@@ -459,7 +466,7 @@ void initialize_Filters()
 // Name: lowPassFilter(float *inBuffer)
 // Desc: Applies 2 Pole lowPassFilter based on http://www.mega-nerd.com/Res/IADSPL/RBJ-filters.txt
 //-----------------------------------------------------------------------------
-void lowPassFilter(float *inBuffer)
+static void lowPassFilter(float *inBuffer)
 {
     // Difference Equation
     /* y[n] = (b0/a0)*x[n] + (b1/a0)*x[n-1] + (b2/a0)*x[n-2] - (a1/a0)*y[n-1] - (a2/a0)*y[n-2] */
@@ -469,7 +476,7 @@ void lowPassFilter(float *inBuffer)
     float   a0, a1, a2, b0, b1, b2;
 
     /* Account for Transient Response of Filter */
-    float   x1, x2, y1, y2;  
+    static  float   x1, x2, y1, y2;  
             x1 = x2 = 0;
             y1 = y2 = 0;
 
@@ -512,7 +519,7 @@ void lowPassFilter(float *inBuffer)
 // Name: lowPassFilter(float *inBuffer)
 // Desc: Applies 2 Pole lowPassFilter based on http://www.mega-nerd.com/Res/IADSPL/RBJ-filters.txt
 //-----------------------------------------------------------------------------
-void highPassFilter(float *inBuffer)
+static void highPassFilter(float *inBuffer)
 {
     // Difference Equation
     /* y[n] = (b0/a0)*x[n] + (b1/a0)*x[n-1] + (b2/a0)*x[n-2] - (a1/a0)*y[n-1] - (a2/a0)*y[n-2] */
@@ -522,7 +529,7 @@ void highPassFilter(float *inBuffer)
     float   a0, a1, a2, b0, b1, b2;
 
     /* Account for Transient Response of Filter */
-    float   x1, x2, y1, y2;  
+    static  float   x1, x2, y1, y2;  
             x1 = x2 = 0;
             y1 = y2 = 0;
 
@@ -641,10 +648,10 @@ void keyboardFunc( unsigned char key, int x, int y )
         /* Increase/Decrease Lpf Resonance  */
         case 'i':
             data.lpf_res  -= RESONANCE_INCREMENT;
-                if (data.lpf_res <= 0)
+                if (data.lpf_res <= 1)
                 {
                     printf("Min Resonance Reached : 0\n");
-                    data.lpf_res = 0;
+                    data.lpf_res = 1;
                 }
                 break;
         case 'o':
@@ -697,10 +704,10 @@ void keyboardFunc( unsigned char key, int x, int y )
         /* Increase/Decrease Lpf Resonance  */
         case 'w':
             data.hpf_res  -= RESONANCE_INCREMENT;
-                if (data.hpf_res <= 0)
+                if (data.hpf_res <= 1)
                 {
                     printf("Min Resonance Reached : 0\n");
-                    data.hpf_res = 0;
+                    data.hpf_res = 1;
                 }
                 break;
         case 'e':
@@ -771,7 +778,7 @@ void initialize_glut(int argc, char *argv[]) {
     // set the window postion
     glutInitWindowPosition( 400, 100 );
     // create the window
-    glutCreateWindow( "synthGL");
+    glutCreateWindow( "Vinyl Visualizer");
     // full screen
     if( g_fullscreen )
         glutFullScreen();
@@ -788,7 +795,6 @@ void initialize_glut(int argc, char *argv[]) {
     glutSpecialFunc( specialKey );
     // set window's to specialUpKey callback (when the key is up is called)
     glutSpecialUpFunc( specialUpKey );
-
     // do our own initialization
     initialize_graphics( );  
 }
@@ -944,34 +950,23 @@ void initialize_graphics()
 //-----------------------------------------------------------------------------
 void displayFunc( )
 {
-    // local variables
-    // SAMPLE sinBuffer[g_buffer_size];
-    // SAMPLE triBuffer[g_buffer_size];
-    // SAMPLE sawBuffer[g_buffer_size];
-    // SAMPLE impBuffer[g_buffer_size];
-    // SAMPLE outBuffer[g_buffer_size];
+    /* Local Vairables */
+    float visualBuffer[g_buffer_size];
 
-    // wait for data
+    /* Wait for Data */
     while( !g_ready ) usleep( 1000 );
 
-    // copy currently playing audio into buffer
-    // memcpy( sinBuffer, data.g_sinBuffer, g_buffer_size * sizeof(SAMPLE) );
-    // memcpy( triBuffer, data.g_triBuffer, g_buffer_size * sizeof(SAMPLE) );
-    // memcpy( sawBuffer, data.g_sawBuffer, g_buffer_size * sizeof(SAMPLE) );
-    // memcpy( impBuffer, data.g_impBuffer, g_buffer_size * sizeof(SAMPLE) );
-    //memcpy( outBuffer, data.g_outBuffer, g_buffer_size * sizeof(SAMPLE) );
+    /* Copy Currently Playing Audio Into Buffer */
+    memcpy( visualBuffer, data.src_outBuffer, g_buffer_size * sizeof(float) );
 
-    // Hand off to audio callback thread
+    /* Hand Off to Audio Callback Thread */
     g_ready = false;
 
     // clear the color and depth buffers
     glClear( GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT );
 
-    // TODO: Draw the signals on the screeen
-    // drawTimeDomain(sinBuffer, 0.0, 1.0, 0.0, 3); //Draws Sine
-    // drawTimeDomain(triBuffer, 0.0, 0.0, 1.0, 1); //Draws Triangle
-    // drawTimeDomain(sawBuffer, 1.0, 0.0, 0.0, -1); //Draws Saw
-    // drawTimeDomain(impBuffer, 0.9, 0.5, 0.3, -3); //Draws Impulse
+    /* Draw the Signal On The Screen */
+    drawCircle(3, g_buffer_size, visualBuffer); 
 
     // flush gl commands
     glFlush( );
@@ -981,38 +976,75 @@ void displayFunc( )
 }
 
 //-----------------------------------------------------------------------------
-// Name: void drawTimeDomain(SAMPLE float R, float G, float B, Y Translate)
-// Desc: Draws the Time Domain signal in the top of the screen
+// Name: void drawTimeDomain(float r, float num_segments, float* buffer)
+// Desc: Draws a Circle based on Radius r, length, and sample buffer
+// Circle Skeleton From - http://slabode.exofire.net/circle_draw.shtml
 //-----------------------------------------------------------------------------
-void drawTimeDomain(SAMPLE *buffer, float R, float G, float B, int y) 
-{
-    // Initialize initial xinc
-    GLfloat x = -10;
+void drawCircle(float r, int num_segments, float* buffer) 
+{ 
+    float theta = 2 * PI / (float)num_segments; 
+    float tangetial_factor = tanf(theta);//calculate the tangential factor 
+    float radial_factor = cosf(theta);//calculate the radial factor 
+    
+    float x = r;//we start at angle = 0 
+    float y = 0; 
+    int   i;
 
-    // Calculate increment x
-    GLfloat xinc = fabs((2*x)/g_buffer_size);
+    // Get the actual volume
+    GLfloat rms = computeRMS(buffer);
 
-    glColor3f(R, G, B);
+    // Get the value to scale the speaker based on the rms volume
+    GLfloat scale = (rms * 2 + 0.01); 
 
     glPushMatrix(); 
     {
-        // Rotate
+        // //Translate
+        glTranslatef(0, 0, 0.0f);
+        
+        //Rotate
         rotateView();
 
-        // Translate
-        glTranslatef(0, y, 0.0f);
-
-        glBegin(GL_LINE_STRIP);
-
-        // Draw Windowed Time Domain
-        for (int i=0; i<g_buffer_size; i++)
-        {
-            glVertex3f(x, 0.5 * buffer[i], 0.0f);
-            x += xinc;
-        }
-
+        /* Scale Size of Circle Based on Track Amplitude */
+        glScalef(scale, scale, scale);        
+        
+        glBegin(GL_LINE_LOOP); 
+            for (i = 0; i < num_segments; i++) 
+            { 
+                /* Change Color Based on Track Amplitude */
+                glColor4f(1, -buffer[i], buffer[i], buffer[i]);
+                
+                /* Animate Circle Z-Depth Based on Track Amplitude */
+                glVertex3f(x + 0, y + 0, buffer[i]); 
+                
+                /* Calculate the Tangential Vector 
+                   Remember, the Radial Vector is (x, y), 
+                   to Get the Tangential Vector we Flip Those Coordinates and Negate One of Them */
+                float tx = -y; 
+                float ty = x; 
+                
+                /* Add the Tangential Vector */ 
+                x += tx * tangetial_factor; 
+                y += ty * tangetial_factor; 
+                
+                /* Correct Using the Radial Factor */ 
+                x *= radial_factor; 
+                y *= radial_factor; 
+            } 
         glEnd(); 
     }
     glPopMatrix();
+}
 
+//-----------------------------------------------------------------------------
+// Name: float computeRMS(SAMPLE *buffer)
+// Desc: Computes an RMS Value for use in Scaling Circle
+//-----------------------------------------------------------------------------
+float computeRMS(SAMPLE *buffer) 
+{
+    float rms = 0;
+    int i;
+    for (i = 0; i < g_buffer_size; i++) {
+        rms += buffer[i] * buffer[i];
+    }
+    return sqrtf(rms / g_buffer_size);
 }
