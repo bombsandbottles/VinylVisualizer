@@ -72,7 +72,6 @@
     /* Audio File Members */
     SNDFILE* inFile;
     SF_INFO sfinfo1;
-    float buffer[ITEMS_PER_BUFFER];
     int numberOfFrames;
 
     float amplitude;
@@ -288,26 +287,20 @@ static int paCallback( const void *inputBuffer,
     int i, numberOfFrames;
 
     /* Read FramesPerBuffer Amount of Data from inFile into buffer[] */
-    numberOfFrames = sf_readf_float(data->inFile, data->buffer, framesPerBuffer);
+    numberOfFrames = sf_readf_float(data->inFile, data->src_inBuffer, framesPerBuffer);
 
     /* Looping of inFile if EOF is Reached */
     if (numberOfFrames < framesPerBuffer) 
     {
         sf_seek(data->inFile, 0, SEEK_SET);
         numberOfFrames = sf_readf_float(data->inFile, 
-                                        data->buffer+(numberOfFrames*data->sfinfo1.channels), 
+                                        data->src_inBuffer+(numberOfFrames*data->sfinfo1.channels), 
                                         framesPerBuffer-numberOfFrames);  
     }
 
-    /* Read Data from Buffer into SRC Data to Pass to src_process() */
-    for (i = 0; i < framesPerBuffer * data->sfinfo1.channels; i++)
-    {
-        data->src_inBuffer[i] = data->buffer[i];
-    }
-
     /* Inform SRC Data How Many Input Frames To Process */
-    data->src_data.input_frames = numberOfFrames;
     data->src_data.end_of_input = 0;
+    data->src_data.input_frames = numberOfFrames;
 
     /* Perform SRC Modulation, Processed Samples are in src_outBuffer[] */
     if ((data->src_error = src_process (data->src_state, &data->src_data))) {   
@@ -324,6 +317,8 @@ static int paCallback( const void *inputBuffer,
     if (data->hpf_On == true) {
         highPassFilter(data->src_outBuffer);
     }
+
+    // printf("%ld, %ld\n",data->src_data.output_frames_gen, data->src_data.input_frames_used);
 
     /* Write Processed SRC Data to Audio Out and Visual Out */
     for (i = 0; i < framesPerBuffer * data->sfinfo1.channels; i++)
