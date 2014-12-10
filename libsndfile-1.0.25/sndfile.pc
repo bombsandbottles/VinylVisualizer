@@ -8,5 +8,5 @@ Description: A library for reading and writing audio files
 Requires: 
 Version: 1.0.25
 Libs: -L${libdir} -lsndfile
-Libs.private: 
+Libs.private: -L/usr/local/Cellar/flac/1.3.0/lib -lFLAC  -L/usr/local/Cellar/libvorbis/1.3.4/lib -lvorbisenc  
 Cflags: -I${includedir} 

@@ -52,7 +52,7 @@
 #define ITEMS_PER_BUFFER        (FRAMES_PER_BUFFER * 2)
 #define FORMAT                  paFloat32
 #define SAMPLE                  float
-#define SRC_RATIO_INCREMENT     0.05
+#define SRC_RATIO_INCREMENT     0.1
 #define FILTER_CUTOFF_INCREMENT 100 //hz 
 #define RESONANCE_INCREMENT     1   // Q Factor
 #define PI                      3.14159265358979323846264338327950288
@@ -384,7 +384,7 @@ void initialize_audio(const char* inFile)
             NULL,
             &outputParameters,
             data.sfinfo1.samplerate, 
-            g_buffer_size, 
+            FRAMES_PER_BUFFER, 
             paNoFlag, 
             paCallback, 
             &data );
@@ -438,7 +438,7 @@ void initialize_SRC_DATA()
     data.src_data.data_out = data.src_outBuffer;    //Point to SRC OutBuffer
     data.src_data.input_frames = 0;                 //Start with Zero to Force Load
     data.src_data.output_frames = ITEMS_PER_BUFFER
-                            / data.sfinfo1.channels;//Number of Frames to Write Out
+                          / data.sfinfo1.channels;//Number of Frames to Write Out
     data.src_data.src_ratio = data.src_ratio;       //Sets Default Playback Speed
 }
 

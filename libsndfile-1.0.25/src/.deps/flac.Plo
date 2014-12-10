@@ -66,7 +66,12 @@ flac.lo: flac.c sfconfig.h config.h /usr/include/stdio.h \
   /usr/include/sys/_types/_pthread_t.h \
   /usr/include/sys/_types/_pthread_key_t.h \
   /usr/include/sys/_types/_fsblkcnt_t.h \
-  /usr/include/sys/_types/_fsfilcnt_t.h common.h
+  /usr/include/sys/_types/_fsfilcnt_t.h common.h \
+  /usr/local/include/FLAC/stream_decoder.h \
+  /usr/local/include/FLAC/export.h /usr/local/include/FLAC/format.h \
+  /usr/local/include/FLAC/ordinals.h \
+  /usr/local/include/FLAC/stream_encoder.h \
+  /usr/local/include/FLAC/metadata.h /usr/local/include/FLAC/callback.h
 
 sfconfig.h:
 
@@ -299,3 +304,17 @@ sndfile.h:
 /usr/include/sys/_types/_fsfilcnt_t.h:
 
 common.h:
+
+/usr/local/include/FLAC/stream_decoder.h:
+
+/usr/local/include/FLAC/export.h:
+
+/usr/local/include/FLAC/format.h:
+
+/usr/local/include/FLAC/ordinals.h:
+
+/usr/local/include/FLAC/stream_encoder.h:
+
+/usr/local/include/FLAC/metadata.h:
+
+/usr/local/include/FLAC/callback.h:

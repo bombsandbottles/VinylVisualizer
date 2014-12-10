@@ -72,7 +72,12 @@ ogg_vorbis.lo: ogg_vorbis.c sfconfig.h config.h /usr/include/stdio.h \
   /usr/include/mach/i386/_structs.h \
   /usr/include/sys/_types/_sigaltstack.h \
   /usr/include/sys/_types/_ucontext.h /usr/include/sys/resource.h \
-  /usr/include/alloca.h
+  /usr/include/alloca.h /usr/local/Cellar/libogg/1.3.2/include/ogg/ogg.h \
+  /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0/include/stddef.h \
+  /usr/local/Cellar/libogg/1.3.2/include/ogg/os_types.h \
+  /usr/include/inttypes.h \
+  /usr/local/Cellar/libvorbis/1.3.4/include/vorbis/codec.h \
+  /usr/local/Cellar/libvorbis/1.3.4/include/vorbis/vorbisenc.h ogg.h
 
 sfconfig.h:
 
@@ -327,3 +332,17 @@ common.h:
 /usr/include/sys/resource.h:
 
 /usr/include/alloca.h:
+
+/usr/local/Cellar/libogg/1.3.2/include/ogg/ogg.h:
+
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/../lib/clang/6.0/include/stddef.h:
+
+/usr/local/Cellar/libogg/1.3.2/include/ogg/os_types.h:
+
+/usr/include/inttypes.h:
+
+/usr/local/Cellar/libvorbis/1.3.4/include/vorbis/codec.h:
+
+/usr/local/Cellar/libvorbis/1.3.4/include/vorbis/vorbisenc.h:
+
+ogg.h:

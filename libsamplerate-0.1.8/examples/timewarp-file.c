@@ -54,12 +54,14 @@ main (int argc, char *argv [])
 		usage_exit (argv [0]) ;
 
 	putchar ('\n') ;
+	//READ INFILE
 	printf ("Input File    : %s\n", argv [argc - 2]) ;
 	if ((infile = sf_open (argv [argc - 2], SFM_READ, &sfinfo)) == NULL)
 	{	printf ("Error : Not able to open input file '%s'\n", argv [argc - 2]) ;
 		exit (1) ;
 		} ;
 
+	//ERROR CHECK
 	if (INPUT_STEP_SIZE * sfinfo.channels > BUFFER_LEN)
 	{	printf ("\n\nError : INPUT_STEP_SIZE * sfinfo.channels > BUFFER_LEN\n\n") ;
 		exit (1) ;
@@ -69,6 +71,7 @@ main (int argc, char *argv [])
 	/* Delete the output file length to zero if already exists. */
 	remove (argv [argc - 1]) ;
 
+	//OPEN OUTFILE
 	if ((outfile = sf_open (argv [argc - 1], SFM_WRITE, &sfinfo)) == NULL)
 	{	printf ("Error : Not able to open output file '%s'\n", argv [argc - 1]) ;
 		sf_close (infile) ;
@@ -80,6 +83,7 @@ main (int argc, char *argv [])
 	printf ("Output file   : %s\n", argv [argc - 1]) ;
 	printf ("Converter     : %s\n", src_get_name (DEFAULT_CONVERTER)) ;
 
+	//PROCESS AUDIO WITH TIMEWARP
 	count = timewarp_convert (infile, outfile, DEFAULT_CONVERTER, sfinfo.channels) ;
 
 	printf ("Output Frames : %ld\n\n", (long) count) ;
@@ -107,7 +111,8 @@ static TIMEWARP_FACTOR warp [] =
 
 static sf_count_t
 timewarp_convert (SNDFILE *infile, SNDFILE *outfile, int converter, int channels)
-{	static float input [BUFFER_LEN] ;
+{	
+	static float input [BUFFER_LEN] ;
 	static float output [BUFFER_LEN] ;
 
 	SRC_STATE	*src_state ;
@@ -137,15 +142,15 @@ timewarp_convert (SNDFILE *infile, SNDFILE *outfile, int converter, int channels
 		warp_index ++ ;
 		} ;
 
-	src_data.data_out = output ;
-	src_data.output_frames = BUFFER_LEN /channels ;
+	src_data.data_out = output ; //Point to SRC OutBuffer
+	src_data.output_frames = BUFFER_LEN /channels ; //Number of Frames to Write Out
 
 	while (1)
 	{
 		if (warp_index < ARRAY_LEN (warp) - 1 && input_count >= warp [warp_index].index)
 		{	src_data.src_ratio = warp [warp_index].ratio ;
 			warp_index ++ ;
-			} ;
+			} ; //DEALS WITH SETTING WARP
 
 		/* If the input buffer is empty, refill it. */
 		if (src_data.input_frames == 0)
