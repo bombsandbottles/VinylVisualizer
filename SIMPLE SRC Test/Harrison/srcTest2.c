@@ -25,8 +25,8 @@
     SNDFILE *infile;
     SF_INFO sf_info;
 
-    float input  [BUFFER_LEN];
-    float output [BUFFER_LEN];
+    float input  [BUFFER_LEN * 4];
+    float output [BUFFER_LEN * 2];
 
     SRC_STATE   *src_state ;
     SRC_DATA    src_data ;
@@ -83,7 +83,7 @@ int main( int argc, char **argv ) {
     data.src_data.input_frames = 0;
     data.src_data.data_in = data.input ;
     data.src_data.data_out = data.output ; //Point to SRC OutBuffer
-    data.src_data.output_frames = BUFFER_LEN/data.sf_info.channels; //Number of Frames to Write Out
+    data.src_data.output_frames = BUFFER_LEN; // /data.sf_info.channels; //Number of Frames to Write Out
 
     /********************************************************************************/
     /********************************************************************************/
@@ -137,10 +137,10 @@ int main( int argc, char **argv ) {
                          before it gets to the program */
         switch (ch) {
             case 'd':
-                data.src_data.src_ratio -= 0.1;
+                data.src_data.src_ratio -= 0.5;
                 break;
             case 'f':
-                data.src_data.src_ratio += 0.01;
+                data.src_data.src_ratio += 2;
                 break;
         }
 
@@ -184,20 +184,25 @@ static int paCallback( const void *inputBuffer,
     paData *data = (paData*)userData;
 
     /* Read FramesPerBuffer Amount of Data from inFile into buffer[] */
-    data->src_data.input_frames = sf_readf_float(data->infile, data->input, INPUT_STEP_SIZE);
+    data->src_data.input_frames = sf_readf_float(data->infile, data->input, BUFFER_LEN/data->src_data.src_ratio);
 
     data->src_data.end_of_input = 0;
+
+    // for (i = 0; i < BUFFER_LEN * 2; i++) {
+    //     data->input[i] = data->input[2*i];
+    // }
 
     /* Process current block. */
     if ((data->error = src_process (data->src_state, &data->src_data)))
     {   printf ("\nError : %s\n", src_strerror (data->error)) ;
         exit (1) ;
-        } ;
+    }
 
     
-    for (i = 0; i < INPUT_STEP_SIZE * data->sf_info.channels; i++) {
+    for (i = 0; i < BUFFER_LEN * data->sf_info.channels; i++) {
         // Write into the "speakers" (outBuf) to listen to the delay
         outBuf[i] = data->output[i];
+        // outBuf[i] = data->input[i];
     }
 
     return paContinue;

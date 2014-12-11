@@ -52,7 +52,7 @@
 #define ITEMS_PER_BUFFER        (FRAMES_PER_BUFFER * 2)
 #define FORMAT                  paFloat32
 #define SAMPLE                  float
-#define SRC_RATIO_INCREMENT     0.1
+#define SRC_RATIO_INCREMENT     1
 #define FILTER_CUTOFF_INCREMENT 100 //hz 
 #define RESONANCE_INCREMENT     1   // Q Factor
 #define PI                      3.14159265358979323846264338327950288
@@ -85,8 +85,8 @@
     int    src_converter_type;
     double src_ratio;
     
-    float src_inBuffer[ITEMS_PER_BUFFER];
-    float src_outBuffer[ITEMS_PER_BUFFER];
+    float src_inBuffer[FRAMES_PER_BUFFER * 16];
+    float src_outBuffer[FRAMES_PER_BUFFER * 8];
 
     /* Low Pass Filter Members */
     bool  lpf_On;
@@ -287,20 +287,20 @@ static int paCallback( const void *inputBuffer,
     int i, numberOfFrames;
 
     /* Read FramesPerBuffer Amount of Data from inFile into buffer[] */
-    numberOfFrames = sf_readf_float(data->inFile, data->src_inBuffer, framesPerBuffer);
+    numberOfFrames = sf_readf_float(data->inFile, data->src_inBuffer, framesPerBuffer/data->src_data.src_ratio);
 
     /* Looping of inFile if EOF is Reached */
-    if (numberOfFrames < framesPerBuffer) 
-    {
-        sf_seek(data->inFile, 0, SEEK_SET);
-        numberOfFrames = sf_readf_float(data->inFile, 
-                                        data->src_inBuffer+(numberOfFrames*data->sfinfo1.channels), 
-                                        framesPerBuffer-numberOfFrames);  
-    }
+    // if (numberOfFrames < framesPerBuffer/data->src_data.src_ratio) 
+    // {
+    //     sf_seek(data->inFile, 0, SEEK_SET);
+    //     numberOfFrames = sf_readf_float(data->inFile, 
+    //                                     data->src_inBuffer+(numberOfFrames/data->src_data.src_ratio), 
+    //                                     framesPerBuffer-numberOfFrames);  
+    // }
 
     /* Inform SRC Data How Many Input Frames To Process */
-    data->src_data.end_of_input = 0;
     data->src_data.input_frames = numberOfFrames;
+    data->src_data.end_of_input = 0;
 
     /* Perform SRC Modulation, Processed Samples are in src_outBuffer[] */
     if ((data->src_error = src_process (data->src_state, &data->src_data))) {   
@@ -434,11 +434,10 @@ void initialize_SRC_DATA()
 {
     data.src_ratio = 1;                             //Sets Default Playback Speed
     /*---------------*/
+    data.src_data.input_frames = 0;                 //Start with Zero to Force Load
     data.src_data.data_in = data.src_inBuffer;      //Point to SRC inBuffer
     data.src_data.data_out = data.src_outBuffer;    //Point to SRC OutBuffer
-    data.src_data.input_frames = 0;                 //Start with Zero to Force Load
-    data.src_data.output_frames = ITEMS_PER_BUFFER
-                          / data.sfinfo1.channels;//Number of Frames to Write Out
+    data.src_data.output_frames = FRAMES_PER_BUFFER; //Number of Frames to Write Out
     data.src_data.src_ratio = data.src_ratio;       //Sets Default Playback Speed
 }
 
@@ -473,9 +472,7 @@ static void lowPassFilter(float *inBuffer)
     float   a0, a1, a2, b0, b1, b2;
 
     /* Account for Transient Response of Filter */
-    static  float   x1, x2, y1, y2;  
-            x1 = x2 = 0;
-            y1 = y2 = 0;
+    static  float   x1 = 0, x2 = 0, y1 = 0, y2 = 0; 
 
     /* First Compute a Few Intermediate Variables */
     omega = 2.0 * PI * data.lpf_freq / data.sfinfo1.samplerate;
@@ -491,16 +488,17 @@ static void lowPassFilter(float *inBuffer)
     a2 =   1.0 - alpha;
 
     /* Lowpass the Chunk of Data */
-    for (i = 0; i < FRAMES_PER_BUFFER * data.sfinfo1.channels; i++)
+    // for (i = 0; i < FRAMES_PER_BUFFER * data.sfinfo1.channels; i++)
+    for (i = 0; i < FRAMES_PER_BUFFER; i++)
     {
         /* Run a Sample Through the Difference Equation */
-        processed_sample = (b0/a0) * inBuffer[i] + (b1/a0) * x1 + (b2/a0) * x2 - 
+        processed_sample = (b0/a0) * inBuffer[2*i] + (b1/a0) * x1 + (b2/a0) * x2 - 
                            (a1/a0) * y1 - (a2/a0) * y2;
 
             /***********/
             /* Shift the Samples in the Equation So That n-1 == n */
             x2 = x1;
-            x1 = inBuffer[i];
+            x1 = inBuffer[2*i];
 
             /* Feedback Loop for Poles, Also Shift Samples So That n-1 == n */
             y2 = y1;
@@ -508,13 +506,13 @@ static void lowPassFilter(float *inBuffer)
             /***********/
 
         /* Return Lowpassed Sample into lpf_outBuffer[] */
-        inBuffer[i] = processed_sample;
+        inBuffer[2*i] = processed_sample;
     }
 }
 
 //-----------------------------------------------------------------------------
-// Name: lowPassFilter(float *inBuffer)
-// Desc: Applies 2 Pole lowPassFilter based on http://www.mega-nerd.com/Res/IADSPL/RBJ-filters.txt
+// Name: highPassFilter(float *inBuffer)
+// Desc: Applies 2 Pole highPassFilter based on http://www.mega-nerd.com/Res/IADSPL/RBJ-filters.txt
 //-----------------------------------------------------------------------------
 static void highPassFilter(float *inBuffer)
 {
@@ -988,7 +986,7 @@ void drawCircle(float r, int num_segments, float* buffer, bool scalar)
     
     float x = r;//we start at angle = 0 
     float y = 0; 
-    int   i, k;
+    int   i;
 
     // Get the actual volume
     GLfloat rms = computeRMS(buffer);
