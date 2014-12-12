@@ -52,7 +52,7 @@
 #define ITEMS_PER_BUFFER        (FRAMES_PER_BUFFER * 2)
 #define FORMAT                  paFloat32
 #define SAMPLE                  float
-#define SRC_RATIO_INCREMENT     1
+#define SRC_RATIO_INCREMENT     0.01
 #define FILTER_CUTOFF_INCREMENT 100 //hz 
 #define RESONANCE_INCREMENT     1   // Q Factor
 #define PI                      3.14159265358979323846264338327950288
@@ -61,7 +61,6 @@
 
 #define cmp_abs(x)              ( sqrt( (x).re * (x).re + (x).im * (x).im ) )
 #define ROTATION_INCR           .75f
-#define WATERFALL_SIZE          20 
 #define INIT_WIDTH              1280
 #define INIT_HEIGHT             720
 
@@ -86,22 +85,20 @@
     double src_ratio;
     
     float src_inBuffer[FRAMES_PER_BUFFER * 16];
-    float src_outBuffer[FRAMES_PER_BUFFER * 8];
+    float src_outBuffer[FRAMES_PER_BUFFER * 2];
 
     /* Low Pass Filter Members */
     bool  lpf_On;
-    float lpf_freq;
-    float lpf_res;
+    int   lpf_freq;
+    int   lpf_res;
 
     /* High Pass Filter Members */
     bool  hpf_On;
-    float hpf_freq;
-    float hpf_res;
+    int   hpf_freq;
+    int   hpf_res;
 
     /* OpenGL Members */
-    float gl_audioBuffer[ITEMS_PER_BUFFER];
-    float gl_waterfall[WATERFALL_SIZE][ITEMS_PER_BUFFER];
-    
+    float gl_audioBuffer[ITEMS_PER_BUFFER];    
 } paData;
 
 //Global Data Initialized
@@ -178,9 +175,6 @@ float computeRMS(SAMPLE *buffer);
 /* Command Line Prints */
 void help();
 
-
-
-
 //-----------------------------------------------------------------------------
 // Name: Main
 // Desc: ...
@@ -256,17 +250,16 @@ void help()
     printf( "\n----------------------------------------------------\n" );
     printf( "Vinyl Visualizer\n" );
     printf( "----------------------------------------------------\n" );
-    printf( "'h'   - print this help message\n" );
-    printf( "'f'   - toggle fullscreen\n" );
+    printf( "'f'   - Toggle Fullscreen\n" );
     printf( "'j/k' - Increase/Decrease LPF Freq. Cutoff by 100hz\n" );
     printf( "'i/o' - Increase/Decrease LPF Resonance by 1.0 Q Factor\n" );
     printf( "'s/d' - Increase/Decrease HPF Freq. Cutoff by 100hz\n" );
     printf( "'w/e' - Increase/Decrease HPF Resonance by 1.0 Q Factor\n" );
-    printf( "',/.' - Increase/Decrease Volume\n" );
+    printf( "'-/=' - Increase/Decrease Speed/Pitch\n" );
     printf( "'m'   - To Mute Output Audio\n" );
     printf( "'r'   - Reset All Parameters\n" );
-    printf( "'CURSOR ARROWS' - Change Speed Of Playback\n" );
-    printf( "'q'   - quit\n" );
+    printf( "'CURSOR ARROWS' - Rotate Visuals\n" );
+    printf( "'q'   - Quit\n" );
     printf( "----------------------------------------------------\n" );
     printf( "\n" );
 }
@@ -284,10 +277,18 @@ static int paCallback( const void *inputBuffer,
     (void) inputBuffer;
     float* out = (float*)outputBuffer;
     paData *data = (paData*)userData;
-    int i, numberOfFrames;
+    int i, numberOfFrames, numInFrames;
+
+    /* This if Statement Ensures Smooth VariSpeed Output */
+    if (fmod((double)framesPerBuffer, data->src_data.src_ratio) == 0)
+    {
+    	numInFrames = framesPerBuffer;
+    }
+    else
+    	numInFrames = (framesPerBuffer/data->src_data.src_ratio) + 2;
 
     /* Read FramesPerBuffer Amount of Data from inFile into buffer[] */
-    numberOfFrames = sf_readf_float(data->inFile, data->src_inBuffer, framesPerBuffer/data->src_data.src_ratio);
+    numberOfFrames = sf_readf_float(data->inFile, data->src_inBuffer, numInFrames);
 
     /* Looping of inFile if EOF is Reached */
     // if (numberOfFrames < framesPerBuffer/data->src_data.src_ratio) 
@@ -318,12 +319,11 @@ static int paCallback( const void *inputBuffer,
         highPassFilter(data->src_outBuffer);
     }
 
-    // printf("%ld, %ld\n",data->src_data.output_frames_gen, data->src_data.input_frames_used);
+    printf("%ld, %ld\n",data->src_data.output_frames_gen, data->src_data.input_frames_used);
 
     /* Write Processed SRC Data to Audio Out and Visual Out */
     for (i = 0; i < framesPerBuffer * data->sfinfo1.channels; i++)
     {
-        // gl_audioBuffer[i] = data->src_outBuffer[i] * data->amplitude;   
         out[i] = data->src_outBuffer[i] * data->amplitude;
     }
 
@@ -466,6 +466,7 @@ static void lowPassFilter(float *inBuffer)
 {
     // Difference Equation
     /* y[n] = (b0/a0)*x[n] + (b1/a0)*x[n-1] + (b2/a0)*x[n-2] - (a1/a0)*y[n-1] - (a2/a0)*y[n-2] */
+
     float   processed_sample;
     int     i;
     float   alpha, omega, cs;
@@ -518,15 +519,14 @@ static void highPassFilter(float *inBuffer)
 {
     // Difference Equation
     /* y[n] = (b0/a0)*x[n] + (b1/a0)*x[n-1] + (b2/a0)*x[n-2] - (a1/a0)*y[n-1] - (a2/a0)*y[n-2] */
+
     float   processed_sample;
     int     i;
     float   alpha, omega, cs;
     float   a0, a1, a2, b0, b1, b2;
 
     /* Account for Transient Response of Filter */
-    static  float   x1, x2, y1, y2;  
-            x1 = x2 = 0;
-            y1 = y2 = 0;
+    static  float   x1 = 0, x2 = 0, y1 = 0, y2 = 0; 
 
     /* First Compute a Few Intermediate Variables */
     omega = 2.0 * PI * data.hpf_freq / data.sfinfo1.samplerate;
@@ -569,9 +569,9 @@ static void highPassFilter(float *inBuffer)
 //-----------------------------------------------------------------------------
 void keyboardFunc( unsigned char key, int x, int y )
 {
-    initscr(); /* Start Curses Mode */
-    cbreak();  /* Line Buffering Disabled*/
-    noecho();  /* Comment This Out if You Want to Show Characters When They Are Typed */ 
+    // initscr(); /* Start Curses Mode */
+    // cbreak();  /* Line Buffering Disabled*/
+    // noecho();  /* Comment This Out if You Want to Show Characters When They Are Typed */ 
 
     //printf("key: %c\n", key);
     switch( key )
@@ -600,10 +600,16 @@ void keyboardFunc( unsigned char key, int x, int y )
 
         /* Temp Change SRC Ratio */
         case '-':
+        	if (data.src_data.src_ratio <= 2.0)
+        	{
             data.src_data.src_ratio += SRC_RATIO_INCREMENT;
+            }
             break;
-        case '+':
+        case '=':
+        	if (data.src_data.src_ratio >= 0.5 )
+        	{
             data.src_data.src_ratio -= SRC_RATIO_INCREMENT;
+            }
             break;
 
         /* Low Pass Filter Controls */
@@ -627,7 +633,7 @@ void keyboardFunc( unsigned char key, int x, int y )
             data.lpf_freq -= FILTER_CUTOFF_INCREMENT;
                 if (data.lpf_freq < 20)
                 {
-                    printf("Min Frequency Reached : 20hz\n");
+                    printf("Min Frequency Reached : %dhz\n", data.lpf_freq);
                     data.lpf_freq = 20;
                 }
                 break;
@@ -635,7 +641,7 @@ void keyboardFunc( unsigned char key, int x, int y )
             data.lpf_freq += FILTER_CUTOFF_INCREMENT;
                 if (data.lpf_freq > 20000)
                 {
-                    printf("Max Frequency Reached : 20khz\n");
+                    printf("Max Frequency Reached : %dkz\n", data.lpf_freq);
                     data.lpf_freq = 20000;
                 }
                 break;
@@ -645,7 +651,7 @@ void keyboardFunc( unsigned char key, int x, int y )
             data.lpf_res  -= RESONANCE_INCREMENT;
                 if (data.lpf_res <= 1)
                 {
-                    printf("Min Resonance Reached : 0\n");
+                    printf("Min Resonance Reached : %d\n", data.lpf_res);
                     data.lpf_res = 1;
                 }
                 break;
@@ -653,7 +659,7 @@ void keyboardFunc( unsigned char key, int x, int y )
             data.lpf_res  += RESONANCE_INCREMENT;
                 if (data.lpf_res >= 10)
                 {
-                    printf("Max Resonance Reached : 10\n");
+                    printf("Max Resonance Reached : %d\n", data.lpf_res);
                     data.lpf_res = 10;
                 }
                 break;
@@ -682,8 +688,6 @@ void keyboardFunc( unsigned char key, int x, int y )
                     printf("Min Frequency Reached : 20hz\n");
                     data.hpf_freq = 20;
                 }
-                mvprintw(0,0,"Hpf: %.2f",data.hpf_freq);
-                refresh();
                 break;
         case 'd':
             data.hpf_freq += FILTER_CUTOFF_INCREMENT;
@@ -692,8 +696,6 @@ void keyboardFunc( unsigned char key, int x, int y )
                     printf("Max Frequency Reached : 20khz\n");
                     data.hpf_freq = 20000;
                 }
-                mvprintw(0,0,"Hpf: %.2f",data.hpf_freq);
-                refresh();
                 break;
 
         /* Increase/Decrease Lpf Resonance  */
@@ -753,7 +755,7 @@ void keyboardFunc( unsigned char key, int x, int y )
             src_delete (data.src_state);
 
             /* End Curses Mode */
-            endwin(); 
+            //
             exit(0);
             break;
     }
