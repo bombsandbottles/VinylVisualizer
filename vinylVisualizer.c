@@ -12,6 +12,7 @@
  *   Credits : 
  *   Time Domain Based Filters Based Off - http://www.mega-nerd.com/Res/IADSPL/RBJ-filters.txt
  *   Sample Rate Modulation API - http://www.mega-nerd.com/SRC/api_full.html
+ *	 OpenGl Skeleton - Uri Nieto
  * ===========================================================================================
  */
 #include <stdio.h>
@@ -79,7 +80,6 @@
     SRC_DATA   src_data;
     SRC_STATE* src_state;
 
-    bool   src_On;
     int    src_error;
     int    src_converter_type;
     double src_ratio;
@@ -690,7 +690,7 @@ void keyboardFunc( unsigned char key, int x, int y )
             data.amplitude = INITIAL_VOLUME;
             break;
 
-        /* Temp Change SRC Ratio */
+        /* Change SRC Ratio */
         case '-':
         	if (data.src_data.src_ratio <= 2.0)
         	{
@@ -847,7 +847,7 @@ void keyboardFunc( unsigned char key, int x, int y )
             src_delete (data.src_state);
 
             /* End Curses Mode */
-            //
+            //endwin();
             exit(0);
             break;
     }
