@@ -168,8 +168,8 @@ void initialize_audio(const char* inFile);
 void stop_portAudio();
 void initialize_SRC_DATA();
 void initialize_Filters();
-static void lowPassFilter(float *inBuffer);
-static void highPassFilter(float *inBuffer);
+static void lowPassFilter(float *inBuffer, int numChannels);
+static void highPassFilter(float *inBuffer, int numChannels);
 float computeRMS(SAMPLE *buffer);
 
 /* Command Line Prints */
@@ -291,13 +291,10 @@ static int paCallback( const void *inputBuffer,
     numberOfFrames = sf_readf_float(data->inFile, data->src_inBuffer, numInFrames);
 
     /* Looping of inFile if EOF is Reached */
-    // if (numberOfFrames < framesPerBuffer/data->src_data.src_ratio) 
-    // {
-    //     sf_seek(data->inFile, 0, SEEK_SET);
-    //     numberOfFrames = sf_readf_float(data->inFile, 
-    //                                     data->src_inBuffer+(numberOfFrames/data->src_data.src_ratio), 
-    //                                     framesPerBuffer-numberOfFrames);  
-    // }
+    if (numberOfFrames < framesPerBuffer/data->src_data.src_ratio) 
+    {
+        sf_seek(data->inFile, 0, SEEK_SET);
+    }
 
     /* Inform SRC Data How Many Input Frames To Process */
     data->src_data.input_frames = numberOfFrames;
@@ -311,12 +308,12 @@ static int paCallback( const void *inputBuffer,
 
     /* Perform Lowpass Filtering */
     if (data->lpf_On == true) {
-        lowPassFilter(data->src_outBuffer);
+        lowPassFilter(data->src_outBuffer, data->sfinfo1.channels);
     }
 
     /* Perform Highpass Filtering */
     if (data->hpf_On == true) {
-        highPassFilter(data->src_outBuffer);
+        highPassFilter(data->src_outBuffer, data->sfinfo1.channels);
     }
 
     printf("%ld, %ld\n",data->src_data.output_frames_gen, data->src_data.input_frames_used);
@@ -344,6 +341,13 @@ void initialize_audio(const char* inFile)
     if (( data.inFile = sf_open( inFile, SFM_READ, &data.sfinfo1 )) == NULL ) 
     {
         printf("Error, Couldn't Open The File\n");
+        exit (1);
+    }
+
+    /* Check for Compatibility */
+    if (data.sfinfo1.channels > 2)
+    {
+    	printf("Error, File Must be Stereo or Mono\n");
         exit (1);
     }
 
@@ -462,7 +466,7 @@ void initialize_Filters()
 // Name: lowPassFilter(float *inBuffer)
 // Desc: Applies 2 Pole lowPassFilter based on http://www.mega-nerd.com/Res/IADSPL/RBJ-filters.txt
 //-----------------------------------------------------------------------------
-static void lowPassFilter(float *inBuffer)
+static void lowPassFilter(float *inBuffer, int numChannels)
 {
     // Difference Equation
     /* y[n] = (b0/a0)*x[n] + (b1/a0)*x[n-1] + (b2/a0)*x[n-2] - (a1/a0)*y[n-1] - (a2/a0)*y[n-2] */
@@ -473,7 +477,8 @@ static void lowPassFilter(float *inBuffer)
     float   a0, a1, a2, b0, b1, b2;
 
     /* Account for Transient Response of Filter */
-    static  float   x1 = 0, x2 = 0, y1 = 0, y2 = 0; 
+    static  float   lx1 = 0, lx2 = 0, ly1 = 0, ly2 = 0;
+    static  float   rx1 = 0, rx2 = 0, ry1 = 0, ry2 = 0; 
 
     /* First Compute a Few Intermediate Variables */
     omega = 2.0 * PI * data.lpf_freq / data.sfinfo1.samplerate;
@@ -488,34 +493,77 @@ static void lowPassFilter(float *inBuffer)
     a1 =  -2.0 * cs;
     a2 =   1.0 - alpha;
 
-    /* Lowpass the Chunk of Data */
-    // for (i = 0; i < FRAMES_PER_BUFFER * data.sfinfo1.channels; i++)
-    for (i = 0; i < FRAMES_PER_BUFFER; i++)
+    /* Lowpass the Chunk of Data for Mono */
+    if (numChannels == MONO)
     {
-        /* Run a Sample Through the Difference Equation */
-        processed_sample = (b0/a0) * inBuffer[2*i] + (b1/a0) * x1 + (b2/a0) * x2 - 
-                           (a1/a0) * y1 - (a2/a0) * y2;
+    	for (i = 0; i < FRAMES_PER_BUFFER; i++)
+    	{
+        	/* Run a Sample Through the Difference Equation */
+        	processed_sample = (b0/a0) * inBuffer[i] + (b1/a0) * lx1 + (b2/a0) * lx2 - 
+                           (a1/a0) * ly1 - (a2/a0) * ly2;
 
             /***********/
             /* Shift the Samples in the Equation So That n-1 == n */
-            x2 = x1;
-            x1 = inBuffer[2*i];
+            lx2 = lx1;
+            lx1 = inBuffer[i];
 
             /* Feedback Loop for Poles, Also Shift Samples So That n-1 == n */
-            y2 = y1;
-            y1 = processed_sample;
+            ly2 = ly1;
+            ly1 = processed_sample;
             /***********/
 
-        /* Return Lowpassed Sample into lpf_outBuffer[] */
-        inBuffer[2*i] = processed_sample;
+        	/* Return Lowpassed Sample into outBuffer[] */
+        	inBuffer[i] = processed_sample;
+    	}
     }
+
+    /* Lowpass the Chunk of Data for Stereo */
+    else if (numChannels == STEREO)
+    {
+    	/* Left Channel */
+    	for (i = 0; i < FRAMES_PER_BUFFER; i++)
+    	{
+        	processed_sample = (b0/a0) * inBuffer[2*i] + (b1/a0) * lx1 + (b2/a0) * lx2 - 
+                           (a1/a0) * ly1 - (a2/a0) * ly2;
+
+            /***********/
+            lx2 = lx1;
+            lx1 = inBuffer[2*i];
+
+            ly2 = ly1;
+            ly1 = processed_sample;
+            /***********/
+
+        	/* Return Lowpassed Sample into outBuffer[] */
+        	inBuffer[2*i] = processed_sample;
+    	}
+
+    	/* Right Channel */
+    	for (i = 0; i < FRAMES_PER_BUFFER; i++)
+    	{
+        	processed_sample = (b0/a0) * inBuffer[2*i+1] + (b1/a0) * rx1 + (b2/a0) * rx2 - 
+                           (a1/a0) * ry1 - (a2/a0) * ry2;
+
+            /***********/
+            rx2 = rx1;
+            rx1 = inBuffer[2*i+1];
+
+            ry2 = ry1;
+            ry1 = processed_sample;
+            /***********/
+
+        	/* Return Lowpassed Sample into outBuffer[] */
+        	inBuffer[2*i+1] = processed_sample;
+    	}
+    }
+
 }
 
 //-----------------------------------------------------------------------------
 // Name: highPassFilter(float *inBuffer)
 // Desc: Applies 2 Pole highPassFilter based on http://www.mega-nerd.com/Res/IADSPL/RBJ-filters.txt
 //-----------------------------------------------------------------------------
-static void highPassFilter(float *inBuffer)
+static void highPassFilter(float *inBuffer, int numChannels)
 {
     // Difference Equation
     /* y[n] = (b0/a0)*x[n] + (b1/a0)*x[n-1] + (b2/a0)*x[n-2] - (a1/a0)*y[n-1] - (a2/a0)*y[n-2] */
@@ -526,7 +574,8 @@ static void highPassFilter(float *inBuffer)
     float   a0, a1, a2, b0, b1, b2;
 
     /* Account for Transient Response of Filter */
-    static  float   x1 = 0, x2 = 0, y1 = 0, y2 = 0; 
+    static  float   lx1 = 0, lx2 = 0, ly1 = 0, ly2 = 0;
+    static  float   rx1 = 0, rx2 = 0, ry1 = 0, ry2 = 0; 
 
     /* First Compute a Few Intermediate Variables */
     omega = 2.0 * PI * data.hpf_freq / data.sfinfo1.samplerate;
@@ -541,25 +590,68 @@ static void highPassFilter(float *inBuffer)
     a1 =  -2.0 * cs ;
     a2 =   1.0 - alpha ;
 
-    /* Lowpass the Chunk of Data */
-    for (i = 0; i < FRAMES_PER_BUFFER * data.sfinfo1.channels; i++)
+    /* Highpass the Chunk of Data for Mono */
+    if (numChannels == MONO)
     {
-        /* Run a Sample Through the Difference Equation */
-        processed_sample = (b0/a0) * inBuffer[i] + (b1/a0) * x1 + (b2/a0) * x2 - 
-                           (a1/a0) * y1 - (a2/a0) * y2;
+    	for (i = 0; i < FRAMES_PER_BUFFER; i++)
+    	{
+        	/* Run a Sample Through the Difference Equation */
+        	processed_sample = (b0/a0) * inBuffer[i] + (b1/a0) * lx1 + (b2/a0) * lx2 - 
+                           (a1/a0) * ly1 - (a2/a0) * ly2;
 
             /***********/
             /* Shift the Samples in the Equation So That n-1 == n */
-            x2 = x1;
-            x1 = inBuffer[i];
+            lx2 = lx1;
+            lx1 = inBuffer[i];
 
             /* Feedback Loop for Poles, Also Shift Samples So That n-1 == n */
-            y2 = y1;
-            y1 = processed_sample;
+            ly2 = ly1;
+            ly1 = processed_sample;
             /***********/
 
-        /* Return Highpassed Sample into lpf_outBuffer[] */
-        inBuffer[i] = processed_sample;
+        	/* Return Highpassed Sample into outBuffer[] */
+        	inBuffer[i] = processed_sample;
+    	}
+    }
+
+    /* Highpass the Chunk of Data for Stereo */
+    else if (numChannels == STEREO)
+    {
+    	/* Left Channel */
+    	for (i = 0; i < FRAMES_PER_BUFFER; i++)
+    	{
+        	processed_sample = (b0/a0) * inBuffer[2*i] + (b1/a0) * lx1 + (b2/a0) * lx2 - 
+                           (a1/a0) * ly1 - (a2/a0) * ly2;
+
+            /***********/
+            lx2 = lx1;
+            lx1 = inBuffer[2*i];
+
+            ly2 = ly1;
+            ly1 = processed_sample;
+            /***********/
+
+        	/* Return Highpassed Sample into outBuffer[] */
+        	inBuffer[2*i] = processed_sample;
+    	}
+
+    	/* Right Channel */
+    	for (i = 0; i < FRAMES_PER_BUFFER; i++)
+    	{
+        	processed_sample = (b0/a0) * inBuffer[2*i+1] + (b1/a0) * rx1 + (b2/a0) * rx2 - 
+                           (a1/a0) * ry1 - (a2/a0) * ry2;
+
+            /***********/
+            rx2 = rx1;
+            rx1 = inBuffer[2*i+1];
+
+            ry2 = ry1;
+            ry1 = processed_sample;
+            /***********/
+
+        	/* Return Highpassed Sample into outBuffer[] */
+        	inBuffer[2*i+1] = processed_sample;
+    	}
     }
 }
 
