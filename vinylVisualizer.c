@@ -15,6 +15,7 @@
  *	 OpenGl Skeleton - Uri Nieto
  * ===========================================================================================
  */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -25,7 +26,7 @@
 #include <sndfile.h>         
 #include <samplerate.h>     
 
-// OpenGL
+/* OpenGL */
 #ifdef __MACOSX_CORE__
 #include <GLUT/glut.h>
 #else
@@ -34,7 +35,7 @@
 #include <GL/glut.h>
 #endif
 
-// Platform-dependent sleep routines.
+/* Platform-Dependent Sleep Routines. */
 #if defined( __WINDOWS_ASIO__ ) || defined( __WINDOWS_DS__ )
 #include <windows.h>
 #define SLEEP( milliseconds ) Sleep( (DWORD) milliseconds ) 
@@ -72,7 +73,6 @@
     /* Audio File Members */
     SNDFILE* inFile;
     SF_INFO sfinfo1;
-    int numberOfFrames;
 
     float amplitude;
 
@@ -101,7 +101,7 @@
     float gl_audioBuffer[ITEMS_PER_BUFFER];    
 } paData;
 
-//Global Data Initialized
+/* Global Data Initialized */
 paData data;
 PaStream *g_stream;
 
@@ -170,7 +170,8 @@ void initialize_SRC_DATA();
 void initialize_Filters();
 static void lowPassFilter(float *inBuffer, int numChannels);
 static void highPassFilter(float *inBuffer, int numChannels);
-float computeRMS(SAMPLE *buffer);
+float computeRMS(float *buffer);
+void brickwall(float *buffer, int numChannels);
 
 /* Command Line Prints */
 void help();
@@ -316,7 +317,10 @@ static int paCallback( const void *inputBuffer,
         highPassFilter(data->src_outBuffer, data->sfinfo1.channels);
     }
 
-    printf("%ld, %ld\n",data->src_data.output_frames_gen, data->src_data.input_frames_used);
+    /* Prevent Blowing Out the Speakers Hopefully */
+    brickwall(data->src_outBuffer, data->sfinfo1.channels);
+
+    // printf("%ld, %ld\n",data->src_data.output_frames_gen, data->src_data.input_frames_used);
 
     /* Write Processed SRC Data to Audio Out and Visual Out */
     for (i = 0; i < framesPerBuffer * data->sfinfo1.channels; i++)
@@ -441,7 +445,7 @@ void initialize_SRC_DATA()
     data.src_data.input_frames = 0;                 //Start with Zero to Force Load
     data.src_data.data_in = data.src_inBuffer;      //Point to SRC inBuffer
     data.src_data.data_out = data.src_outBuffer;    //Point to SRC OutBuffer
-    data.src_data.output_frames = FRAMES_PER_BUFFER; //Number of Frames to Write Out
+    data.src_data.output_frames = FRAMES_PER_BUFFER;//Number of Frames to Write Out
     data.src_data.src_ratio = data.src_ratio;       //Sets Default Playback Speed
 }
 
@@ -1136,7 +1140,7 @@ void drawCircle(float r, int num_segments, float* buffer, bool scalar)
 // Name: float computeRMS(SAMPLE *buffer)
 // Desc: Computes an RMS Value for use in Scaling Circle
 //-----------------------------------------------------------------------------
-float computeRMS(SAMPLE *buffer) 
+float computeRMS(float *buffer) 
 {
     float rms = 0;
     int i;
@@ -1144,4 +1148,27 @@ float computeRMS(SAMPLE *buffer)
         rms += buffer[i] * buffer[i];
     }
     return sqrtf(rms / g_buffer_size);
+}
+
+//-----------------------------------------------------------------------------
+// Name: float computeRMS(SAMPLE *buffer)
+// Desc: Computes an RMS Value for use in Scaling Circle
+//-----------------------------------------------------------------------------
+void brickwall(float *buffer, int numChannels) 
+{
+    int   i;
+    float sample;
+
+    /* Clip Sample if it Goes out of Bit Depth */
+    for (i = 0; i < FRAMES_PER_BUFFER * numChannels; i++)
+    {
+        sample = buffer[i];
+        if (sample > 32767) {
+            sample = 32767;
+        }
+        else if (sample < -32767) {
+            sample = -32767;
+        }
+        buffer[i] = sample;
+    }
 }
