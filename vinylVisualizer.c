@@ -97,6 +97,9 @@
     int   hpf_freq;
     int   hpf_res;
 
+    /* Filter On/Off */
+    char* filterState[2];
+
     /* OpenGL Members */
     float gl_audioBuffer[ITEMS_PER_BUFFER];    
 } paData;
@@ -198,12 +201,13 @@ int main( int argc, char *argv[] )
     /* Initialize PortAudio */
     initialize_audio(argv[1]);
 
-    initscr(); /* Start Curses Mode */
-    cbreak();  /* Line Buffering Disabled*/
-    noecho();  /* Comment This Out if You Want to Show Characters When They Are Typed */ 
-    curs_set(0); /* Make ncurses Cursor Invisible */
+    /* Start Curses Mode */
+    initscr(); 
+    cbreak();       // Line Buffering Disabled
+    noecho();       // Comment This Out if You Want to Show Characters When They Are Typed
+    curs_set(0);    // Make ncurses Cursor Invisible
 
-    /* Print Help Menu */
+    /* Print Help Menu and GUI */
     help();
     printGUI();
 
@@ -219,6 +223,10 @@ int main( int argc, char *argv[] )
 //-----------------------------------------------------------------------------
 void initialize_src_type()
 {
+    bool valid = false;
+    char buffer[4];
+    int  srcType;
+
     /* Print User Menu */
     printf("\nChoose The Quality of Sample Rate Conversion\n"
             "Best Quality = 0\n"
@@ -228,24 +236,33 @@ void initialize_src_type()
             "Linear Processing = 4\n");
     printf("Enter a Number Between 0 and 4 : ");
 
-    /* Get User Input */
-    // bool found = false;
-    // int c;
-    // char* string;
-    // while (!found)
-    // {
-    //     string = fgets(string);
-    //     c = atoi(string);
-    //         if (c >= 0 || c <= 4)
-    //         {
-    //             found = true;
-    //         }
-    //     printf("Error: Please Enter a Number Between 0 and 4 : \n");
-    // }
-    int c = 0;
+    /* Read From stdin, Convert to int */
+    while (!valid)
+    {
+        if (fgets(buffer, sizeof(buffer), stdin) != NULL) 
+        {
+            srcType = atoi(buffer);
+        }
+
+        if (srcType > -1 && srcType < 5)
+        {
+            valid = true;
+        }
+        else
+            valid = false;
+
+        if (!valid)
+        {
+            printf("Error: Please Enter a Number Between 0 and 4 : ");
+        }
+    }
+
     /* Intialize SRC Algorithm */
-    data.src_converter_type = c;
-    printf("%d\n", data.src_converter_type);
+    if (valid == true)
+    {
+        data.src_converter_type = srcType;
+    }
+
 }
 
 //-----------------------------------------------------------------------------
@@ -469,10 +486,14 @@ void initialize_Filters()
     data.lpf_freq = 20000;  //Max Open
     data.lpf_res  = 1;      //No Resonance
 
-    /* Highpas Filter */
+    /* Highpass Filter */
     data.hpf_On   = false;  //Default Off
     data.hpf_freq = 20;     //Max Closed
     data.hpf_res  = 1;      //No Resonance
+
+    /* Define Off/On */
+    data.filterState[0] = "Off";
+    data.filterState[1] = "On";    
 }
 
 //-----------------------------------------------------------------------------
@@ -1194,16 +1215,15 @@ void printGUI()
     mvprintw(14,0,"Speed Ratio: %.2f\n", data.src_data.src_ratio);
 
     /* Low Pass Filter */
-    mvprintw(15,0,"LPF: OFF\n");
+    mvprintw(15,0,"LPF: %s\n", data.filterState[(int)data.lpf_On]);
     mvprintw(16,0,"Frequency: %dhz\n", data.lpf_freq);
     mvprintw(17,0,"Resonance: %d\n", data.lpf_res);
 
     /* High Pass Filter */
-    mvprintw(15,20,"HPF: OFF\n");
+    mvprintw(15,20,"HPF: %s\n", data.filterState[(int)data.hpf_On]);
     mvprintw(16,20,"Frequency: %dhz\n", data.hpf_freq);
     mvprintw(17,20,"Resonance: %d\n", data.hpf_res);
 
     mvprintw(18,0,"\n");
-    
     refresh();
 }
