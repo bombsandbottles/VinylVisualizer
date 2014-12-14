@@ -175,6 +175,7 @@ void brickwall(float *buffer, int numChannels);
 
 /* Command Line Prints */
 void help();
+void printGUI();
 
 //-----------------------------------------------------------------------------
 // Name: Main
@@ -197,8 +198,14 @@ int main( int argc, char *argv[] )
     /* Initialize PortAudio */
     initialize_audio(argv[1]);
 
-    /* Print Help */
+    initscr(); /* Start Curses Mode */
+    cbreak();  /* Line Buffering Disabled*/
+    noecho();  /* Comment This Out if You Want to Show Characters When They Are Typed */ 
+    curs_set(0); /* Make ncurses Cursor Invisible */
+
+    /* Print Help Menu */
     help();
+    printGUI();
 
     /* Main Interactive Loop, Quits With 'q' */
     glutMainLoop();
@@ -227,7 +234,7 @@ void initialize_src_type()
     // char* string;
     // while (!found)
     // {
-    //     string = gets(string);
+    //     string = fgets(string);
     //     c = atoi(string);
     //         if (c >= 0 || c <= 4)
     //         {
@@ -248,21 +255,23 @@ void initialize_src_type()
 void help()
 {
     /* Print Command Line Instructions */
-    printf( "\n----------------------------------------------------\n" );
-    printf( "Vinyl Visualizer\n" );
-    printf( "----------------------------------------------------\n" );
-    printf( "'f'   - Toggle Fullscreen\n" );
-    printf( "'j/k' - Increase/Decrease LPF Freq. Cutoff by 100hz\n" );
-    printf( "'i/o' - Increase/Decrease LPF Resonance by 1.0 Q Factor\n" );
-    printf( "'s/d' - Increase/Decrease HPF Freq. Cutoff by 100hz\n" );
-    printf( "'w/e' - Increase/Decrease HPF Resonance by 1.0 Q Factor\n" );
-    printf( "'-/=' - Increase/Decrease Speed/Pitch\n" );
-    printf( "'m'   - To Mute Output Audio\n" );
-    printf( "'r'   - Reset All Parameters\n" );
-    printf( "'CURSOR ARROWS' - Rotate Visuals\n" );
-    printf( "'q'   - Quit\n" );
-    printf( "----------------------------------------------------\n" );
-    printf( "\n" );
+    mvprintw(0,0,
+     "----------------------------------------------------\n"
+     "Vinyl Visualizer\n"
+     "----------------------------------------------------\n" 
+     "'f'   - Toggle Fullscreen\n" 
+     "'j/k' - Increase/Decrease LPF Freq. Cutoff by 100hz\n" 
+     "'i/o' - Increase/Decrease LPF Resonance by 1.0 Q Factor\n" 
+     "'s/d' - Increase/Decrease HPF Freq. Cutoff by 100hz\n" 
+     "'w/e' - Increase/Decrease HPF Resonance by 1.0 Q Factor\n" 
+     "'-/=' - Increase/Decrease Speed/Pitch\n" 
+     "'m'   - To Mute Output Audio\n" 
+     "'r'   - Reset All Parameters\n" 
+     "'CURSOR ARROWS' - Rotate Visuals\n" 
+     "'q'   - Quit\n" 
+     "----------------------------------------------------\n" 
+     "\n" );
+    refresh();
 }
 
 //-----------------------------------------------------------------------------
@@ -665,11 +674,7 @@ static void highPassFilter(float *inBuffer, int numChannels)
 //-----------------------------------------------------------------------------
 void keyboardFunc( unsigned char key, int x, int y )
 {
-    // initscr(); /* Start Curses Mode */
-    // cbreak();  /* Line Buffering Disabled*/
-    // noecho();  /* Comment This Out if You Want to Show Characters When They Are Typed */ 
 
-    //printf("key: %c\n", key);
     switch( key )
     {
         /* Fullscreen */
@@ -684,7 +689,6 @@ void keyboardFunc( unsigned char key, int x, int y )
                 glutReshapeWindow( g_last_width, g_last_height );
 
             g_fullscreen = !g_fullscreen;
-            printf("[Visualizer]: fullscreen: %s\n", g_fullscreen ? "ON" : "OFF" );
             break;
 
         /* Resets Normal Default Playback */
@@ -692,6 +696,7 @@ void keyboardFunc( unsigned char key, int x, int y )
             data.src_data.src_ratio = 1;     //Sets Default Playback Speed
             initialize_Filters();
             data.amplitude = INITIAL_VOLUME;
+            printGUI();
             break;
 
         /* Change SRC Ratio */
@@ -700,12 +705,14 @@ void keyboardFunc( unsigned char key, int x, int y )
         	{
             data.src_data.src_ratio += SRC_RATIO_INCREMENT;
             }
+            printGUI();
             break;
         case '=':
         	if (data.src_data.src_ratio >= 0.5 )
         	{
             data.src_data.src_ratio -= SRC_RATIO_INCREMENT;
             }
+            printGUI();
             break;
 
         /* Low Pass Filter Controls */
@@ -722,6 +729,7 @@ void keyboardFunc( unsigned char key, int x, int y )
                 //Power Off
                 data.lpf_On = false;
             }
+            printGUI();
             break;
 
         /* Increase/Decrease Lpf Freq Cutoff */
@@ -729,17 +737,17 @@ void keyboardFunc( unsigned char key, int x, int y )
             data.lpf_freq -= FILTER_CUTOFF_INCREMENT;
                 if (data.lpf_freq < 20)
                 {
-                    printf("Min Frequency Reached : %dhz\n", data.lpf_freq);
                     data.lpf_freq = 20;
                 }
+                printGUI();
                 break;
         case 'k':
             data.lpf_freq += FILTER_CUTOFF_INCREMENT;
                 if (data.lpf_freq > 20000)
                 {
-                    printf("Max Frequency Reached : %dkz\n", data.lpf_freq);
                     data.lpf_freq = 20000;
                 }
+                printGUI();
                 break;
 
         /* Increase/Decrease Lpf Resonance  */
@@ -747,17 +755,17 @@ void keyboardFunc( unsigned char key, int x, int y )
             data.lpf_res  -= RESONANCE_INCREMENT;
                 if (data.lpf_res <= 1)
                 {
-                    printf("Min Resonance Reached : %d\n", data.lpf_res);
                     data.lpf_res = 1;
                 }
+                printGUI();
                 break;
         case 'o':
             data.lpf_res  += RESONANCE_INCREMENT;
                 if (data.lpf_res >= 10)
                 {
-                    printf("Max Resonance Reached : %d\n", data.lpf_res);
                     data.lpf_res = 10;
                 }
+                printGUI();
                 break;
 
         /* High Pass Filter Controls */
@@ -774,6 +782,7 @@ void keyboardFunc( unsigned char key, int x, int y )
                 //Power Off
                 data.hpf_On = false;
             }
+            printGUI();
             break;                
 
         /* Increase/Decrease Hpf Freq Cutoff */
@@ -781,17 +790,17 @@ void keyboardFunc( unsigned char key, int x, int y )
             data.hpf_freq -= FILTER_CUTOFF_INCREMENT;
                 if (data.hpf_freq < 20)
                 {
-                    printf("Min Frequency Reached : 20hz\n");
                     data.hpf_freq = 20;
                 }
+                printGUI();
                 break;
         case 'd':
             data.hpf_freq += FILTER_CUTOFF_INCREMENT;
                 if (data.hpf_freq > 20000)
                 {
-                    printf("Max Frequency Reached : 20khz\n");
                     data.hpf_freq = 20000;
                 }
+                printGUI();
                 break;
 
         /* Increase/Decrease Lpf Resonance  */
@@ -799,17 +808,17 @@ void keyboardFunc( unsigned char key, int x, int y )
             data.hpf_res  -= RESONANCE_INCREMENT;
                 if (data.hpf_res <= 1)
                 {
-                    printf("Min Resonance Reached : 0\n");
                     data.hpf_res = 1;
                 }
+                printGUI();
                 break;
         case 'e':
             data.hpf_res  += RESONANCE_INCREMENT;
                 if (data.hpf_res >= 10)
                 {
-                    printf("Max Resonance Reached : 10\n");
                     data.hpf_res = 10;
                 }
+                printGUI();
                 break;
 
         /* Amplitude Controls */
@@ -851,7 +860,7 @@ void keyboardFunc( unsigned char key, int x, int y )
             src_delete (data.src_state);
 
             /* End Curses Mode */
-            //endwin();
+            endwin();
             exit(0);
             break;
     }
@@ -1163,12 +1172,38 @@ void brickwall(float *buffer, int numChannels)
     for (i = 0; i < FRAMES_PER_BUFFER * numChannels; i++)
     {
         sample = buffer[i];
-        if (sample > 32767) {
+        if (sample > 32767) 
+        {
             sample = 32767;
         }
-        else if (sample < -32767) {
+        else if (sample < -32767) 
+        {
             sample = -32767;
         }
         buffer[i] = sample;
     }
+}
+
+//-----------------------------------------------------------------------------
+// Name: void printGUI() 
+// Desc: Print Updateable GUI
+//-----------------------------------------------------------------------------
+void printGUI() 
+{
+    /* Speed Ratio */
+    mvprintw(14,0,"Speed Ratio: %.2f\n", data.src_data.src_ratio);
+
+    /* Low Pass Filter */
+    mvprintw(15,0,"LPF: OFF\n");
+    mvprintw(16,0,"LPF: %d\n", data.lpf_freq);
+    mvprintw(17,0,"Resonance: %d\n", data.lpf_res);
+
+    /* High Pass Filter */
+    mvprintw(15,20,"HPF: OFF\n");
+    mvprintw(16,20,"HPF: %d\n", data.hpf_freq);
+    mvprintw(17,20,"Resonance: %d\n", data.hpf_res);
+
+    mvprintw(18,0,"\n");
+    
+    refresh();
 }
