@@ -1195,12 +1195,12 @@ void printGUI()
 
     /* Low Pass Filter */
     mvprintw(15,0,"LPF: OFF\n");
-    mvprintw(16,0,"LPF: %d\n", data.lpf_freq);
+    mvprintw(16,0,"Frequency: %dhz\n", data.lpf_freq);
     mvprintw(17,0,"Resonance: %d\n", data.lpf_res);
 
     /* High Pass Filter */
     mvprintw(15,20,"HPF: OFF\n");
-    mvprintw(16,20,"HPF: %d\n", data.hpf_freq);
+    mvprintw(16,20,"Frequency: %dhz\n", data.hpf_freq);
     mvprintw(17,20,"Resonance: %d\n", data.hpf_res);
 
     mvprintw(18,0,"\n");
