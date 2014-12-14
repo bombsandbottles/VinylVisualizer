@@ -710,6 +710,7 @@ void keyboardFunc( unsigned char key, int x, int y )
                 glutReshapeWindow( g_last_width, g_last_height );
 
             g_fullscreen = !g_fullscreen;
+            printGUI();
             break;
 
         /* Resets Normal Default Playback */
@@ -1109,8 +1110,8 @@ void displayFunc( )
 void drawCircle(float r, int num_segments, float* buffer, bool scalar) 
 { 
     float theta = 2 * PI / (float)num_segments; 
-    float tangetial_factor = tanf(theta);//calculate the tangential factor 
-    float radial_factor = cosf(theta);//calculate the radial factor 
+    float tangetial_factor = tanf(theta);           //calculate the tangential factor 
+    float radial_factor = cosf(theta);              //calculate the radial factor 
     
     float x = r;//we start at angle = 0 
     float y = 0; 
