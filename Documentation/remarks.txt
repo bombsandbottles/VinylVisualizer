@@ -1,0 +1,24 @@
+Harrison Zafrin
+Final Project Closing Remarks
+
+This final project and entire class was a fantastic experience for me.  I can confidently say 
+that I don't remember the last time I learned so much in such a short duration of time.  Reading
+my initial proposal I did not intentionally mean to discard the FFT element of the visualization.
+Rather I couldn't figure out a "nice" way to draw both the amplitude and frequency modulation on top
+of each other keeping with the Vinyl/disc theme.  I initially struggled with getting the audio effects
+to work.  However with the help of Uri I got them to work perfectly and learned a ton in the process.
+My favorite moment from the project was figuring out a way to smooth the sample rate conversion
+effect when the resulting number of frames to be read in was not exactly divisible by the 
+number of output frames to be generated.
+
+I accomplished a smoothing with this code: 
+/* This if Statement Ensures Smooth VariSpeed Output */
+    if (fmod((double)framesPerBuffer, data->src_data.src_ratio) == 0)
+    {
+    	numInFrames = framesPerBuffer;
+    }
+    else
+    	numInFrames = (framesPerBuffer/data->src_data.src_ratio) + 2;
+
+I continue to keep experimenting and developing the VinlyVisualizer in my spare time,
+adding both visual and audio effects and incorporating the FFT portion.

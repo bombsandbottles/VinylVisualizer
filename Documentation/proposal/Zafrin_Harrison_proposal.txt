@@ -1,0 +1,42 @@
+Harrison Zafrin
+Final Project Design/Idea
+
+1. Project Idea
+	My original idea was to create a visualization of pitch detection, however after seeing DIANA I would fear
+	I would be borrowing a lot of ideas from Uris code.  Therefore I'm going to do a visualization of Time-Segment 
+	Processing from DAFX chapter 6 which involves simple sample rate changes to either speed up or slow down a songs
+	pitch and tempo.  The user will be able to use the mouse position to change the sample rate playback.
+	I am also going to try and incoporate Low Pass and High Pass filters into the program.  The visualization
+	will use FFT code to create an STFT effect like in DIANA.
+
+2. Full Proposal and Design
+	
+	TITLE : 
+		A Simple Interactive Visualizer
+	AUTHORS : 
+		Harrison Zafrin
+	ABSTRACT : 
+		For my project I will implement a circular visualization of an STFT.  Depedning on the mouse position,
+		the audio will speed up or slow down like a Vinyl player.  If I can figure it out, I would also like the
+		changes in tempo/pitch to be reflected with color changes in the visualization.  I'm also going to add
+		Lowpass and Highpass filters controllable via the keyboard which would also change the visualization.
+	WHAT : 
+		My software will provide a circle shaped visualization of an input audio file in real time with STFTs.
+		The user can then change the speed of audio output using sample rate manipulation and witness the effect
+		on the visualization.
+		The user will also be able to witness the effect of low and high pass filters with variable cutoff frequency
+		on the visualization.
+		The software should run straight from the command line with the help of OpenGL.
+	WHY : 
+		The motivation for my final project is two fold.  Firstly growing up I always loved music visualizations,
+		being able to get my feet wet with OpenGL would be great and a lot of fun.  Secondly I will combine
+		a music visualization with some audio effects not touched upon in my other classes.  This way I'll
+		get my feet wet in some audio programming that I will have to research myself.
+	TODO : 	
+		My next steps are to start coding.  Everything will be written in C.  I'm going to start with the 
+		sample rate conversions in real time before moving on to the filter components leaving the visualization
+		for last.  That way I know the audio manipulation works before trying to figure out visuals.  I'm going to 
+		be using DAFX chapters 2 and 6 for my audio research as well as the Juilios Smith books online.
+	QUESTIONS : 
+		I'm concerned about the scope of my final project.  However I'm hoping that referencing DIANA will make the
+		visualization part simpler. 
