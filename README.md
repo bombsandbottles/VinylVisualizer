@@ -20,6 +20,7 @@ VinylVisualizer
 The main goal behind my project was to create an interactive music visualizer with realtime audio effects. The projects name is a play on the shape of the visualization and of its realtime audio effects "variable speed replay". In addition to variable speed replay, 2-Pole Lowpass and Highpass IIR Filters are also implemented.
 
 Installation:
+
 	As long as the dependencies listed below are installed there should be no problem using the included makefile.
 
 Required Dependencies:
