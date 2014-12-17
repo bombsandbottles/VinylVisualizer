@@ -1,6 +1,6 @@
 /*
  * ===========================================================================================
- *   Author:  Harrison Zafrin (hzz200@nyu,edu)(harrison@bombsandbottles.com)
+ *   Author:  Harrison Zafrin (hzz200@nyu.edu)(harrison@bombsandbottles.com)
  *   Organization:  Bombs and Bottles LLC. - www.bombsandbottles.com
  *
  *   Title: Vinyl Visualizer
